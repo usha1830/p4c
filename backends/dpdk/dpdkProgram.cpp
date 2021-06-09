@@ -36,6 +36,7 @@ const IR::DpdkAsmStatement *ConvertToDpdkProgram::createListStatement(
 }
 
 const IR::DpdkAsmProgram *ConvertToDpdkProgram::create(IR::P4Program *prog) {
+
     IR::Type_Struct *metadataStruct = nullptr;
 
     for (auto obj : prog->objects) {
@@ -243,6 +244,7 @@ bool ConvertToDpdkParser::preorder(const IR::P4Parser *p) {
                             if (!left->is<IR::Constant>() || !left->is<IR::Constant>())
                                 ::error(ErrorType::ERR_UNSUPPORTED,
                                         "Non constant values are not supported in Mask operation");
+
 
                             unsigned value = right->to<IR::Constant>()->asUnsigned() &
                                              left->to<IR::Constant>()->asUnsigned();
