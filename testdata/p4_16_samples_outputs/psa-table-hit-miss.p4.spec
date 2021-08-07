@@ -36,6 +36,26 @@ metadata instanceof EMPTY_M
 
 header ethernet instanceof ethernet_t
 
+struct psa_ingress_output_metadata_t {
+	bit<8> class_of_service
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+	bit<8> resubmit
+	bit<32> multicast_group
+	bit<32> egress_port
+}
+
+struct psa_egress_output_metadata_t {
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+}
+
+struct psa_egress_deparser_input_metadata_t {
+	bit<32> egress_port
+}
+
 action NoAction args none {
 	return
 }
@@ -66,11 +86,13 @@ apply {
 	jmpnh LABEL_0END
 	invalidate h.ethernet
 	LABEL_0END :	table tbl
-	jmph LABEL_1END
-	validate h.ethernet
+	jmpnh LABEL_1FALSE
+	jmp LABEL_1END
+	LABEL_1FALSE :	validate h.ethernet
 	LABEL_1END :	table tbl
-	jmph LABEL_2END
-	validate h.ethernet
+	jmpnh LABEL_2FALSE
+	jmp LABEL_2END
+	LABEL_2FALSE :	validate h.ethernet
 	LABEL_2END :	table tbl
 	jmpnh LABEL_3END
 	invalidate h.ethernet

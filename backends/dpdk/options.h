@@ -36,6 +36,11 @@ class PsaSwitchOptions : public BMV2::BMV2Options {
             },
             "[PsaSwitch back-end] Lists exact name of all midend passes.\n");
     }
+
+    /// Process the command line arguments and set options accordingly.
+    std::vector<const char*>* process(int argc, char* const argv[]) override;
+
+    const char* getIncludePath() override;
 };
 
 using PsaSwitchContext = P4CContextWithOptions<PsaSwitchOptions>;

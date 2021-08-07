@@ -31,6 +31,11 @@ limitations under the License.
 #include "lib/path.h"
 #include "parser_options.h"
 
+/* CONFIG_PKGDATADIR is defined by cmake at compile time to be the same as
+ * CMAKE_INSTALL_PREFIX This is only valid when the compiler is built and
+ * installed from source locally. If the compiled binary is moved to another
+ * machine, the 'p4includePath' would contain the path on the original machine.
+ */
 const char* p4includePath = CONFIG_PKGDATADIR "/p4include";
 const char* p4_14includePath = CONFIG_PKGDATADIR "/p4_14include";
 
@@ -257,25 +262,37 @@ bool setIncludePathIfExists(const char*& includePathOut,
 
 }  // namespace
 
-std::vector<const char*>* ParserOptions::process(int argc,
-                                                  char* const argv[]) {
+bool ParserOptions::searchForIncludePath(const char*& includePathOut,
+                                         std::vector<cstring> userSpecifiedPaths,
+                                         const char *exename) {
+    bool found = false;
     char buffer[PATH_MAX];
 
-    snprintf(buffer, sizeof(buffer), "%s", exename(argv[0]));
+    BUG_CHECK(strlen(exename) < PATH_MAX, "executable path %1% is too long.", exename);
+
+    snprintf(buffer, sizeof(buffer), "%s", exename);
     if (char* p = strrchr(buffer, '/')) {
         ++p;
         exe_name = p;
-        snprintf(p, buffer + sizeof(buffer) - p, "p4include");
-        if (!setIncludePathIfExists(p4includePath, buffer)) {
-            snprintf(p, buffer + sizeof(buffer) - p, "../p4include");
-            setIncludePathIfExists(p4includePath, buffer);
-        }
-        snprintf(p, buffer + sizeof(buffer) - p, "p4_14include");
-        if (!setIncludePathIfExists(p4_14includePath, buffer)) {
-            snprintf(p, buffer + sizeof(buffer) - p, "../p4_14include");
-            setIncludePathIfExists(p4_14includePath, buffer);
+
+        for (auto path : userSpecifiedPaths) {
+            snprintf(p, buffer + sizeof(buffer) - p, "%s", path.c_str());
+            if (setIncludePathIfExists(includePathOut, buffer)) {
+                LOG3("Setting p4 include path to " << includePathOut);
+                found = true;
+                break;
+            }
         }
     }
+    return found;
+}
+
+std::vector<const char*>* ParserOptions::process(int argc,
+                                                 char* const argv[]) {
+    searchForIncludePath(p4includePath,
+        {"p4include", "../p4include", "../../p4include"}, exename(argv[0]));
+    searchForIncludePath(p4_14includePath,
+        {"p4_14include", "../p4_14include", "../../p4_14include"}, exename(argv[0]));
 
     auto remainingOptions = Util::Options::process(argc, argv);
     validateOptions();
@@ -283,6 +300,21 @@ std::vector<const char*>* ParserOptions::process(int argc,
 }
 
 void ParserOptions::validateOptions() const {}
+
+const char* ParserOptions::getIncludePath() {
+    cstring path = "";
+    // the p4c driver sets environment variables for include
+    // paths.  check the environment and add these to the command
+    // line for the preprocessor
+    char* driverP4IncludePath = isv1() ? getenv("P4C_14_INCLUDE_PATH")
+        : getenv("P4C_16_INCLUDE_PATH");
+    if (driverP4IncludePath != nullptr)
+        path += (cstring(" -I") + cstring(driverP4IncludePath));
+    path += cstring(" -I") + (isv1() ? p4_14includePath : p4includePath);
+    if (!isv1())
+        path += cstring(" -I") + p4includePath + cstring("/bmv2");
+    return path.c_str();
+}
 
 FILE* ParserOptions::preprocess() {
     FILE* in = nullptr;
@@ -296,16 +328,11 @@ FILE* ParserOptions::preprocess() {
 #else
         std::string cmd("cpp");
 #endif
-        // the p4c driver sets environment variables for include
-        // paths.  check the environment and add these to the command
-        // line for the preprocessor
-        char* driverP4IncludePath = isv1() ? getenv("P4C_14_INCLUDE_PATH")
-                                           : getenv("P4C_16_INCLUDE_PATH");
+
         cmd +=
             cstring(" -C -undef -nostdinc -x assembler-with-cpp") + " " +
             preprocessor_options +
-            (driverP4IncludePath ? " -I" + cstring(driverP4IncludePath) : "") +
-            " -I" + (isv1() ? p4_14includePath : p4includePath) + " " +
+            getIncludePath() + " " +
             (file != nullptr ? file : "");
 
         if (Log::verbose())

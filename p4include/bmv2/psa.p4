@@ -1,4 +1,4 @@
-/* Copyright 2013-present Barefoot Networks, Inc.
+/* Copyright 2021 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,33 +16,25 @@ limitations under the License.
 #ifndef __PSA_P4__
 #define __PSA_P4__
 
-#include<core.p4>
-
-#ifndef _PORTABLE_SWITCH_ARCHITECTURE_P4_
-#define _PORTABLE_SWITCH_ARCHITECTURE_P4_
-
 /**
  *   P4-16 declaration of the Portable Switch Architecture
  */
 
-/**
- * These types need to be defined before including the architecture file
- * and the macro protecting them should be defined.
- */
-#define PSA_ON_BMV2_CORE_TYPES
-#ifdef PSA_ON_BMV2_CORE_TYPES
-/* The bit widths shown below are specific to the BMv2 psa_switch
- * target.  These types do _not_ dictate what sizes these types should
- * have for any other implementation of PSA.  Each PSA implementation
- * is free to use its own custom width in bits for those types that
- * are bit<W> for some W.  One reason they are here is to support the
- * implementation of PSA on BMv2.  Another is so that we can easily
- * compile this file, and example PSA P4 programs that include it.
+/**********************************************************************
+ * Beginning of the part of this target-customized psa.p4 include file
+ * that declares data plane widths for one particular target device.
+ **********************************************************************/
+
+/* Target device for which this section is customized:
+ *
+ * BMv2 PSA as implemented by the psa_switch software switch from the
+ * repository https://github.com/p4lang/behavioral-model
  *
  * The bit widths for BMv2 psa_switch have been chosen to be the same
  * as the corresponding InHeader types later.  This simplifies the
  * implementation of P4Runtime for BMv2 psa_switch. */
 
+// BEGIN:Type_defns
 /* These are defined using `typedef`, not `type`, so they are truly
  * just different names for the type bit<W> for the particular width W
  * shown.  Unlike the `type` definitions below, values declared with
@@ -94,56 +86,12 @@ const PortId_t PSA_PORT_RECIRCULATE = (PortId_t) 0xfffffffa;
 const PortId_t PSA_PORT_CPU = (PortId_t) 0xfffffffd;
 
 const CloneSessionId_t PSA_CLONE_SESSION_TO_CPU = (CloneSessionId_t) 0;
-
-#endif  // PSA_ON_BMV2_CORE_TYPES
-
-#ifndef PSA_ON_BMV2_CORE_TYPES
-#error "Please define the following types for PSA and the PSA_EXAMPLE_CORE_TYPES macro"
-// BEGIN:Type_defns
-/* These are defined using `typedef`, not `type`, so they are truly
- * just different names for the type bit<W> for the particular width W
- * shown.  Unlike the `type` definitions below, values declared with
- * the `typedef` type names can be freely mingled in expressions, just
- * as any value declared with type bit<W> can.  Values declared with
- * one of the `type` names below _cannot_ be so freely mingled, unless
- * you first cast them to the corresponding `typedef` type.  While
- * that may be inconvenient when you need to do arithmetic on such
- * values, it is the price to pay for having all occurrences of values
- * of the `type` types marked as such in the automatically generated
- * control plane API.
- *
- * Note that the width of typedef <name>Uint_t will always be the same
- * as the width of type <name>_t. */
-typedef bit<unspecified> PortIdUint_t;
-typedef bit<unspecified> MulticastGroupUint_t;
-typedef bit<unspecified> CloneSessionIdUint_t;
-typedef bit<unspecified> ClassOfServiceUint_t;
-typedef bit<unspecified> PacketLengthUint_t;
-typedef bit<unspecified> EgressInstanceUint_t;
-typedef bit<unspecified> TimestampUint_t;
-
-@p4runtime_translation("p4.org/psa/v1/PortId_t", 32)
-type PortIdUint_t         PortId_t;
-@p4runtime_translation("p4.org/psa/v1/MulticastGroup_t", 32)
-type MulticastGroupUint_t MulticastGroup_t;
-@p4runtime_translation("p4.org/psa/v1/CloneSessionId_t", 16)
-type CloneSessionIdUint_t CloneSessionId_t;
-@p4runtime_translation("p4.org/psa/v1/ClassOfService_t", 8)
-type ClassOfServiceUint_t ClassOfService_t;
-@p4runtime_translation("p4.org/psa/v1/PacketLength_t", 16)
-type PacketLengthUint_t   PacketLength_t;
-@p4runtime_translation("p4.org/psa/v1/EgressInstance_t", 16)
-type EgressInstanceUint_t EgressInstance_t;
-@p4runtime_translation("p4.org/psa/v1/Timestamp_t", 64)
-type TimestampUint_t      Timestamp_t;
-typedef error   ParserError_t;
-
-const PortId_t PSA_PORT_RECIRCULATE = (PortId_t) unspecified;
-const PortId_t PSA_PORT_CPU = (PortId_t) unspecified;
-
-const CloneSessionId_t PSA_CLONE_SESSION_TO_CPU = (CloneSessiontId_t) unspecified;
 // END:Type_defns
-#endif  // #ifndef PSA_EXAMPLE_CORE_TYPES
+
+/**********************************************************************
+ * End of the part of this target-customized psa.p4 include file that
+ * declares data plane widths for one particular target device.
+ **********************************************************************/
 
 // BEGIN:Type_defns2
 
@@ -152,11 +100,14 @@ const CloneSessionId_t PSA_CLONE_SESSION_TO_CPU = (CloneSessiontId_t) unspecifie
  * between a PSA device and the P4Runtime Server software that manages
  * it.
  *
- * The widths are intended to be at least as large as any PSA device
- * will ever have for that type.  Thus these types may also be useful
- * to define packet headers that are sent directly between a PSA
- * device and other devices, without going through P4Runtime Server
- * software (e.g. this could be useful for sending packets to a
+ * The bit widths here are _independent_ of any particular PSA target
+ * device, and should _not_ be customized for each target.
+ *
+ * The bit widths are intended to be at least as large as any PSA
+ * device will ever have for that type.  Thus these types may also be
+ * useful to define packet headers that are sent directly between a
+ * PSA device and other devices, without going through P4Runtime
+ * Server software (e.g. this could be useful for sending packets to a
  * controller or data collection system using higher packet rates than
  * the P4Runtime Server can handle).  If used for this purpose, there
  * is no requirement that the PSA data plane _automatically_ perform
@@ -857,7 +808,5 @@ package PSA_Switch<IH, IM, EH, EM, NM, CI2EM, CE2EM, RESUBM, RECIRCM> (
     BufferingQueueingEngine bqe);
 
 // END:Programmable_blocks
-
-#endif  /* _PORTABLE_SWITCH_ARCHITECTURE_P4_ */
 
 #endif   // __PSA_P4__

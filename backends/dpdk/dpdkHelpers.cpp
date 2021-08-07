@@ -21,12 +21,44 @@ namespace DPDK {
 
 int ConvertStatementToDpdk::next_label_id = 0;
 
+// convert relation comparison statements into the corresponding branching
+// instructions in dpdk.
+void ConvertStatementToDpdk::process_relation_operation(const IR::Expression* dst,
+                                                        const IR::Operation_Relation* op) {
+    auto true_label = Util::printf_format("label_%dtrue", next_label_id);
+    auto false_label = Util::printf_format("label_%dfalse", next_label_id);
+    auto end_label = Util::printf_format("label_%dend", next_label_id++);
+    if (op->is<IR::Equ>()) {
+        add_instr(new IR::DpdkJmpEqualStatement(true_label, op->left, op->right));
+    } else if (op->is<IR::Neq>()) {
+        add_instr(new IR::DpdkJmpNotEqualStatement(true_label, op->left, op->right));
+    } else if (op->is<IR::Lss>()) {
+        add_instr(new IR::DpdkJmpLessStatement(true_label, op->left, op->right));
+    } else if (op->is<IR::Grt>()) {
+        add_instr(new IR::DpdkJmpGreaterStatement(true_label, op->left, op->right));
+    } else if (op->is<IR::Leq>()) {
+        add_instr(new IR::DpdkJmpLessOrEqualStatement(true_label, op->left, op->right));
+    } else if (op->is<IR::Geq>()) {
+        add_instr(new IR::DpdkJmpGreaterEqualStatement(true_label, op->left, op->right));
+    } else {
+        BUG("%1% not implemented.", op);
+    }
+    add_instr(new IR::DpdkLabelStatement(false_label));
+    add_instr(new IR::DpdkMovStatement(dst, new IR::Constant(false)));
+    add_instr(new IR::DpdkJmpLabelStatement(end_label));
+    add_instr(new IR::DpdkLabelStatement(true_label));
+    add_instr(new IR::DpdkMovStatement(dst, new IR::Constant(true)));
+    add_instr(new IR::DpdkLabelStatement(end_label));
+}
+
 bool ConvertStatementToDpdk::preorder(const IR::AssignmentStatement *a) {
     auto left = a->left;
     auto right = a->right;
     IR::DpdkAsmStatement *i = nullptr;
 
-    if (auto r = right->to<IR::Operation_Binary>()) {
+    if (auto r = right->to<IR::Operation_Relation>()) {
+        process_relation_operation(left, r);
+    } else if (auto r = right->to<IR::Operation_Binary>()) {
         if (right->is<IR::Add>()) {
             i = new IR::DpdkAddStatement(left, r->left, r->right);
         } else if (right->is<IR::Sub>()) {
@@ -72,6 +104,29 @@ bool ConvertStatementToDpdk::preorder(const IR::AssignmentStatement *a) {
                     }
                     i = new IR::DpdkGetChecksumStatement(
                         left, e->object->getName(), intermediate);
+                }
+            } else if (e->originalExternType->getName().name == "Meter") {
+                if (e->method->getName().name == "execute") {
+                    auto argSize = e->expr->arguments->size();
+
+                    // DPDK target needs index and packet length as mandatory parameters
+                    if (argSize < 2) {
+                        ::error(ErrorType::ERR_UNEXPECTED, "Expected atleast 2 arguments for %1%",
+                                e->object->getName());
+                        return false;
+                    }
+                    const IR::Expression *color_in = nullptr;
+                    const IR::Expression *length = nullptr;
+                    auto index = e->expr->arguments->at(0)->expression;
+                    if (argSize == 2) {
+                        length = e->expr->arguments->at(1)->expression;
+                        color_in = new IR::Constant(1);
+                    } else if (argSize == 3) {
+                        length = e->expr->arguments->at(2)->expression;
+                        color_in = e->expr->arguments->at(1)->expression;
+                    }
+                    i = new IR::DpdkMeterExecuteStatement(
+                         e->object->getName(), index, length, color_in, left);
                 }
             } else if (e->originalExternType->getName().name == "Register") {
                 if (e->method->getName().name == "read") {
@@ -327,6 +382,10 @@ bool ConvertStatementToDpdk::preorder(const IR::IfStatement *s) {
     return false;
 }
 
+cstring ConvertStatementToDpdk::append_parser_name(const IR::P4Parser* p, cstring label) {
+    return p->name + "_" + label;
+}
+
 bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
     auto mi = P4::MethodInstance::resolve(s->methodCall, refmap, typemap);
     if (auto a = mi->to<P4::ApplyMethod>()) {
@@ -356,6 +415,11 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
                         add_instr(new IR::DpdkChecksumAddStatement(
                             a->object->getName(), intermediate, field));
                     }
+                } else if (auto s = arg->expression->to<IR::StructExpression>()) {
+                    for (auto field : s->components) {
+                        add_instr(new IR::DpdkChecksumAddStatement(
+                            a->object->getName(), intermediate, field->expression));
+                    }
                 } else {
                     add_instr(new IR::DpdkChecksumAddStatement(
                                 a->object->getName(), intermediate, arg->expression));
@@ -367,6 +431,11 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
                     for (auto field : l->components) {
                         add_instr(new IR::DpdkChecksumSubStatement(
                             a->object->getName(), intermediate, field));
+                    }
+                } else if (auto s = arg->expression->to<IR::StructExpression>()) {
+                    for (auto field : s->components) {
+                        add_instr(new IR::DpdkChecksumSubStatement(
+                            a->object->getName(), intermediate, field->expression));
                     }
                 } else {
                     add_instr(new IR::DpdkChecksumSubStatement(
@@ -402,21 +471,46 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
             }
         } else if (a->originalExternType->getName().name == "Meter") {
             if (a->method->getName().name == "execute") {
-                auto args = a->expr->arguments;
-                auto index = args->at(0)->expression;
-                auto color = args->at(1)->expression;
-                auto meter = a->object->getName();
-                add_instr(
-                    new IR::DpdkMeterExecuteStatement(meter, index, color));
+                // DPDK target requires the result of meter execute method is assigned to a
+                // variable of PSA_MeterColor_t type.
+                ::error(ErrorType::ERR_UNSUPPORTED, "LHS of meter execute statement is missing " \
+                        "Use this format instead : color_out = %1%.execute(index, color_in)",
+                         a->object->getName());
             } else {
                 BUG("Meter function not implemented.");
             }
         } else if (a->originalExternType->getName().name == "Counter") {
+            auto di = a->object->to<IR::Declaration_Instance>();
+            auto declArgs = di->arguments;
+            unsigned value = 0;
+            auto counter_type = declArgs->at(1)->expression;
+            if (counter_type->is<IR::Constant>())
+                value = counter_type->to<IR::Constant>()->asUnsigned();
             if (a->method->getName().name == "count") {
                 auto args = a->expr->arguments;
-                auto index = args->at(0)->expression;
-                auto counter = a->object->getName();
-                add_instr(new IR::DpdkCounterCountStatement(counter, index));
+                if (args->size() < 1){
+                    ::error(ErrorType::ERR_UNEXPECTED, "Expected atleast 1 arguments for %1%",
+                            a->object->getName());
+                } else {
+                    const IR::Expression *incr = nullptr;
+                    auto index = args->at(0)->expression;
+                    auto counter = a->object->getName();
+                    if (args->size() == 2)
+                        incr = args->at(1)->expression;
+                    if (value == 2) {
+                        if (incr) {
+                            add_instr(new IR::DpdkCounterCountStatement(counter+"_packets",
+                                                                        index, incr));
+                            add_instr(new IR::DpdkCounterCountStatement(counter+"_bytes",
+                                                                        index));
+                        } else {
+                           ::error(ErrorType::ERR_UNEXPECTED,
+                                   "Expected packet length argument for %1%", a->object->getName());
+                        }
+                     } else {
+                         add_instr(new IR::DpdkCounterCountStatement(counter, index, incr));
+                     }
+                }
             } else {
                 BUG("Counter function not implemented");
             }
@@ -433,11 +527,23 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
         }
     } else if (auto a = mi->to<P4::ExternFunction>()) {
         if (a->method->name == "verify") {
+            if (parser == nullptr)
+                ::error("%1%: verify must be used in parser", s);
             auto args = a->expr->arguments;
             auto condition = args->at(0);
             auto error = args->at(1);
-            add_instr(new IR::DpdkVerifyStatement(condition->expression,
-                                                  error->expression));
+            if (!error->expression->is<IR::Member>())
+                ::error("%1%: must be one of the existing errors", s);
+            auto error_id = error_map->at(error->expression->to<IR::Member>()->member);
+            auto end_label = Util::printf_format("label_%dend", next_label_id++);
+            add_instr(new IR::DpdkJmpEqualStatement(
+                        end_label,
+                        condition->expression, new IR::BoolLiteral(false)));
+            add_instr(new IR::DpdkMovStatement(
+                        new IR::PathExpression("metadata"), new IR::Constant(error_id)));
+            add_instr(new IR::DpdkJmpLabelStatement(
+                        append_parser_name(parser, IR::ParserState::reject)));
+            add_instr(new IR::DpdkLabelStatement(end_label));
         }
     } else if (auto a = mi->to<P4::BuiltInMethod>()) {
         if (a->name == "setValid") {
@@ -449,7 +555,7 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
         }
     } else if (auto a = mi->to<P4::ActionCall>()) {
         auto helper = new DPDK::ConvertStatementToDpdk(refmap, typemap,
-                collector, csum_map);
+                collector, csum_map, error_map);
         a->action->body->apply(*helper);
         for (auto i : helper->get_instr()) {
             add_instr(i);

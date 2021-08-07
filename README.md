@@ -1,4 +1,6 @@
-[![Build Status](https://travis-ci.com/p4lang/p4c.svg?branch=main)](https://travis-ci.com/p4lang/p4c)
+[![Main Build](https://github.com/p4lang/p4c/actions/workflows/ci-test.yml/badge.svg)](https://github.com/p4lang/p4c/actions/workflows/ci-test.yml)
+[![Bazel Build](https://github.com/p4lang/p4c/actions/workflows/ci-bazel.yml/badge.svg)](https://github.com/p4lang/p4c/actions/workflows/ci-bazel.yml)
+[![Validation](https://github.com/p4lang/p4c/actions/workflows/ci-validation.yml/badge.svg)](https://github.com/p4lang/p4c/actions/workflows/ci-validation.yml)
 
 # p4c
 
@@ -223,12 +225,12 @@ included with `p4c` are documented here:
 Most dependencies can be installed using `apt-get install`:
 
 ```bash
-$ sudo apt-get install cmake g++ git automake libtool libgc-dev bison flex
-libfl-dev libgmp-dev libboost-dev libboost-iostreams-dev
-libboost-graph-dev llvm pkg-config python python-scapy python-ipaddr python-ply python3-pip
+sudo apt-get install cmake g++ git automake libtool libgc-dev bison flex \
+libfl-dev libgmp-dev libboost-dev libboost-iostreams-dev \
+libboost-graph-dev llvm pkg-config python python-scapy python-ipaddr python-ply python3-pip \
 tcpdump
 
-$ pip3 install scapy ply
+pip3 install scapy ply
 ```
 
 For documentation building:

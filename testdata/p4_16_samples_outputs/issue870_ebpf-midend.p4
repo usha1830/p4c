@@ -45,7 +45,7 @@ parser prs(packet_in p, out Headers_t headers) {
 
 control pipe(inout Headers_t headers, out bool pass) {
     @name("pipe.hasReturned") bool hasReturned;
-    @noWarn("unused") @name(".NoAction") action NoAction_0() {
+    @noWarn("unused") @name(".NoAction") action NoAction_1() {
     }
     @name("pipe.Reject") action Reject(@name("add") IPv4Address add_1) {
         pass = false;
@@ -57,10 +57,10 @@ control pipe(inout Headers_t headers, out bool pass) {
         }
         actions = {
             Reject();
-            NoAction_0();
+            NoAction_1();
         }
         implementation = hash_table(32w1024);
-        const default_action = NoAction_0();
+        const default_action = NoAction_1();
     }
     @hidden action issue870_ebpf72() {
         pass = false;
@@ -84,10 +84,14 @@ control pipe(inout Headers_t headers, out bool pass) {
     }
     apply {
         tbl_issue870_ebpf68.apply();
-        if (!headers.ipv4.isValid()) {
+        if (headers.ipv4.isValid()) {
+            ;
+        } else {
             tbl_issue870_ebpf72.apply();
         }
-        if (!hasReturned) {
+        if (hasReturned) {
+            ;
+        } else {
             Check_src_ip_0.apply();
         }
     }

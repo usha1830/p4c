@@ -46,6 +46,26 @@ header vlan_tag_0 instanceof vlan_tag_h
 header vlan_tag_1 instanceof vlan_tag_h
 
 
+struct psa_ingress_output_metadata_t {
+	bit<8> class_of_service
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+	bit<8> resubmit
+	bit<32> multicast_group
+	bit<32> egress_port
+}
+
+struct psa_egress_output_metadata_t {
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+}
+
+struct psa_egress_deparser_input_metadata_t {
+	bit<32> egress_port
+}
+
 action NoAction args none {
 	return
 }
@@ -74,10 +94,12 @@ apply {
 	MYIP_PARSE_VLAN_TAG1 :	extract h.vlan_tag_1
 	jmpeq MYIP_PARSE_VLAN_TAG2 h.vlan_tag_1.ether_type 0x8100
 	jmp MYIP_ACCEPT
-	MYIP_PARSE_VLAN_TAG2 :	verify 0 error.StackOutOfBounds
-	MYIP_ACCEPT :	jmpv LABEL_0END h.ethernet
-	table tbl
-	LABEL_0END :	jmpneq LABEL_DROP m.psa_ingress_output_metadata_drop 0x0
+	MYIP_PARSE_VLAN_TAG2 :	jmpeq MYIP_ACCEPT 0 0
+	mov metadata 0x3
+	MYIP_ACCEPT :	jmpnv LABEL_1FALSE h.ethernet
+	jmp LABEL_1END
+	LABEL_1FALSE :	table tbl
+	LABEL_1END :	jmpneq LABEL_DROP m.psa_ingress_output_metadata_drop 0x0
 	emit h.ethernet
 	emit h.vlan_tag_0
 	emit h.vlan_tag_1

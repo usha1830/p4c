@@ -38,13 +38,37 @@ metadata instanceof EMPTY
 
 header ethernet instanceof ethernet_t
 
+struct psa_ingress_output_metadata_t {
+	bit<8> class_of_service
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+	bit<8> resubmit
+	bit<32> multicast_group
+	bit<32> egress_port
+}
+
+struct psa_egress_output_metadata_t {
+	bit<8> clone
+	bit<16> clone_session_id
+	bit<8> drop
+}
+
+struct psa_egress_deparser_input_metadata_t {
+	bit<32> egress_port
+}
+
+regarray counter0_0 size 0x400 initval 0x0
+
+regarray counter1_0 size 0x400 initval 0x0
+
 action NoAction args none {
 	return
 }
 
 action execute args none {
-	counter_count counter0_0 0x400
-	counter_count counter1_0 0x400
+	regadd counter0_0 0x400 1
+	regadd counter1_0 0x400 1
 	return
 }
 

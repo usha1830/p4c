@@ -20,6 +20,7 @@ limitations under the License.
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/evaluator/evaluator.h"
 #include "frontends/p4/typeMap.h"
+#include "frontends/p4/sideEffects.h"
 #include <ir/ir.h>
 #include "lib/error.h"
 namespace DPDK {
@@ -336,12 +337,13 @@ class CollectLocalVariableToMetadata : public Transform {
 // According to dpdk spec, action parameters should prepend a p. In order to
 // respect this, we need at first make all action parameter lists into separate
 // structs and declare that struct in the P4 program. Then we modify the action
-// parameter list. Eventuall, it will only contain one parameter `t`, which is a
+// parameter list. Eventually, it will only contain one parameter `t`, which is a
 // struct containing all parameters previously defined. Next, we prepend t. in
 // front of action parameters. Please note that it is possible that the user
 // defines a struct paremeter himself or define multiple struct parameters in
 // action parameterlist. Current implementation does not support this.
 class PrependPDotToActionArgs : public Transform {
+    P4::TypeMap* typeMap;
     P4::ReferenceMap *refMap;
     BlockInfoMapping *toBlockInfo;
 
@@ -349,11 +351,13 @@ class PrependPDotToActionArgs : public Transform {
     std::map<const cstring, IR::IndexedVector<IR::Parameter> *> args_struct_map;
 
     PrependPDotToActionArgs(BlockInfoMapping *toBlockInfo,
+                            P4::TypeMap* typeMap,
                             P4::ReferenceMap *refMap)
-        : refMap(refMap), toBlockInfo(toBlockInfo) {}
+        : typeMap(typeMap), refMap(refMap), toBlockInfo(toBlockInfo) {}
     const IR::Node *postorder(IR::P4Action *a) override;
     const IR::Node *postorder(IR::P4Program *s) override;
     const IR::Node *preorder(IR::PathExpression *path) override;
+    const IR::Node *preorder(IR::MethodCallExpression*) override;
 };
 
 // For dpdk asm, there is not object-oriented. Therefore, we cannot define a
@@ -442,36 +446,42 @@ class ConvertInternetChecksum : public PassManager {
     }
 };
 
-/* This pass collects PSA register declaration instances and push them to a map
- * for emitting to the .spec file later */
-class CollectRegisterDeclaration : public Inspector {
-    std::map<const IR::Declaration_Instance *, cstring> *reg_map;
-    
-  public:
-    CollectRegisterDeclaration(
-        std::map<const IR::Declaration_Instance *, cstring> *reg_map, P4::TypeMap *)
-        : reg_map(reg_map) {}
+/* This pass collects PSA extern meter, counter and register declaration instances and
+   push them to a vector for emitting to the .spec file later */
+class CollectExternDeclaration : public Inspector {
+    P4::TypeMap *typeMap;
 
+  public:
+    std::vector<const IR::Declaration_Instance *> externDecls;
+    CollectExternDeclaration(P4::TypeMap *typeMap) : typeMap(typeMap) {}
     bool preorder(const IR::Declaration_Instance *d) override {
-        if (d->type->is<IR::Type_Specialized>()) {
-            auto type = d->type->to<IR::Type_Specialized>();
+        if (auto type = d->type->to<IR::Type_Specialized>()) {
             auto externTypeName = type->baseType->path->name.name;
-            if (externTypeName == "Register"){
-              if (d->arguments->size() != 1 and d->arguments->size() != 2 ) {
-                  ::error("%1%: expected size and optionally init_val as arguments", d);
-              }
-              reg_map->emplace(d, d->name);
+            if (externTypeName == "Meter") {
+                if (d->arguments->size() != 2) {
+                    ::error("%1%: expected number of meters and type of meter as arguments", d);
+                } else {
+                    /* Check if the meter is of PACKETS (0) type */
+                    if (d->arguments->at(1)->expression->to<IR::Constant>()->asUnsigned() == 0)
+                        ::warning(ErrorType::WARN_UNSUPPORTED,
+                                  "%1%: Packet metering is not supported." \
+                                  " Falling back to byte metering.", d);
+                }
+            } else if (externTypeName == "Counter") {
+                if (d->arguments->size() != 2 ) {
+                    ::error("%1%: expected number of_counters and type of counter as arguments", d);
+                }
+            } else if (externTypeName == "Register") {
+                if (d->arguments->size() != 1 and d->arguments->size() != 2 ) {
+                    ::error("%1%: expected size and optionally init_val as arguments", d);
+                }
+            } else {
+                // unsupported extern type
+                return false;
             }
+            externDecls.push_back(d);
          }
          return false;
-    }
-};
-
-class AddRegisterDeclaration : public PassManager {
-  public:
-    std::map<const IR::Declaration_Instance *, cstring> reg_map;
-    AddRegisterDeclaration(P4::TypeMap *typeMap) {
-        passes.push_back(new CollectRegisterDeclaration(&reg_map, typeMap));
     }
 };
 
@@ -577,19 +587,129 @@ class ConvertLogicalExpression : public PassManager {
     }
 };
 
+// This pass transforms the tables such that all the Match keys are part of the same
+// header/metadata struct. If the match keys are from different headers, this pass creates
+// mirror copies of the struct field into the metadata struct and updates the table to use
+// the metadata copy.
+class CopyMatchKeysToSingleStruct : public P4::KeySideEffect {
+ public:
+    CopyMatchKeysToSingleStruct(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
+             std::set<const IR::P4Table*>* invokedInKey)
+             : P4::KeySideEffect (refMap, typeMap, invokedInKey)
+    { setName("CopyMatchKeysToSingleStruct"); }
+
+    const IR::Node* preorder(IR::Key* key) override;
+    const IR::Node* postorder(IR::KeyElement* element) override;
+};
+
+/**
+ * Common code between SplitActionSelectorTable and SplitActionProfileTable
+ */
+class SplitP4TableCommon : public Transform {
+  public:
+    enum class TableImplementation { DEFAULT, ACTION_PROFILE, ACTION_SELECTOR };
+    P4::ReferenceMap* refMap;
+    P4::TypeMap* typeMap;
+    TableImplementation implementation;
+    std::set<cstring> match_tables;
+    std::map<cstring, cstring> group_tables;
+    std::map<cstring, cstring> member_tables;
+
+    SplitP4TableCommon(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) :
+        refMap(refMap), typeMap(typeMap) {
+        implementation = TableImplementation::DEFAULT;
+    }
+
+    const IR::Node* postorder(IR::MethodCallStatement* ) override;
+    const IR::Node* postorder(IR::IfStatement* ) override;
+    const IR::Node* postorder(IR::SwitchStatement* ) override;
+
+    std::tuple<const IR::P4Table*, cstring> create_match_table(const IR::P4Table* /* tbl */);
+    const IR::P4Action* create_action(cstring /* actionName */, cstring /* id */, cstring);
+    const IR::P4Table* create_member_table(const IR::P4Table*, cstring);
+    const IR::P4Table* create_group_table(const IR::P4Table*, cstring, cstring, int, int);
+};
+
+/**
+ * Split ActionSelector into three tables:
+ *   match table that matches on exact/ternary key and generates a group id
+ *   group table that matches on group id and generates a member id
+ *   member table that runs an action based on member id.
+ */
+class SplitActionSelectorTable : public SplitP4TableCommon {
+  public:
+
+    SplitActionSelectorTable(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) :
+        SplitP4TableCommon(refMap, typeMap) {
+        implementation = TableImplementation::ACTION_SELECTOR; }
+    const IR::Node* postorder(IR::P4Table* tbl) override;
+};
+
+/**
+ * Split ActionProfile into two tables:
+ *   match table that matches on exact/ternary key and generates a member id
+ *   member table that runs an action based on member id.
+ */
+class SplitActionProfileTable : public SplitP4TableCommon {
+ public:
+    SplitActionProfileTable(P4::ReferenceMap* refMap, P4::TypeMap* typeMap) :
+        SplitP4TableCommon(refMap, typeMap) {
+        implementation = TableImplementation::ACTION_PROFILE; }
+    const IR::Node* postorder(IR::P4Table* tbl) override;
+};
+
+/**
+ * Handle ActionSelector and ActionProfile extern in PSA
+ */
+class ConvertActionSelectorAndProfile : public PassManager {
+ public:
+    ConvertActionSelectorAndProfile(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) {
+        passes.emplace_back(new P4::TypeChecking(refMap, typeMap));
+        passes.emplace_back(new SplitActionSelectorTable(refMap, typeMap));
+        passes.push_back(new P4::ClearTypeMap(typeMap));
+        passes.emplace_back(new P4::TypeChecking(refMap, typeMap, true));
+        passes.emplace_back(new SplitActionProfileTable(refMap, typeMap));
+        passes.push_back(new P4::ClearTypeMap(typeMap));
+        passes.emplace_back(new P4::TypeChecking(refMap, typeMap, true));
+    }
+};
+
+class CollectErrors : public Inspector {
+ public:
+    std::map<cstring, int> error_map;
+    CollectErrors() {}
+    void postorder(const IR::Type_Error* error) override {
+        int id = 0;
+        for (auto err : error->members) {
+            if (error_map.count(err->name.name) == 0) {
+                error_map.emplace(err->name.name, id++);
+            }
+        }
+    }
+};
+
+class DpdkArchLast : public PassManager {
+ public:
+    DpdkArchLast() { setName("DpdkArchLast"); }
+};
+
 class RewriteToDpdkArch : public PassManager {
   public:
+    // TBD: refactor the following data struture into ProgramInfo
     CollectMetadataHeaderInfo *info;
     std::map<const cstring, IR::IndexedVector<IR::Parameter> *>
         *args_struct_map;
     std::map<const IR::Declaration_Instance *, cstring> *csum_map;
-    std::map<const IR::Declaration_Instance *, cstring> *reg_map;
+    std::vector<const IR::Declaration_Instance *> *externDecls;
+    std::set<const IR::P4Table*> invokedInKey;
+    std::map<cstring, int> *error_map;
     RewriteToDpdkArch(P4::ReferenceMap *refMap, P4::TypeMap *typeMap,
                       DpdkVariableCollector *collector) {
         setName("RewriteToDpdkArch");
         auto *evaluator = new P4::EvaluatorPass(refMap, typeMap);
         auto *parsePsa = new ParsePsa();
         info = new CollectMetadataHeaderInfo(&parsePsa->toBlockInfo);
+        passes.push_back(new ConvertActionSelectorAndProfile(refMap, typeMap));
         passes.push_back(evaluator);
         passes.push_back(new VisitFunctor([evaluator, parsePsa]() {
             auto toplevel = evaluator->getToplevelBlock();
@@ -605,6 +725,10 @@ class RewriteToDpdkArch : public PassManager {
         passes.push_back(new ConvertToDpdkArch(&parsePsa->toBlockInfo));
         passes.push_back(new ReplaceMetadataHeaderName(refMap, info));
         passes.push_back(new InjectJumboStruct(info));
+        passes.push_back(new P4::ClearTypeMap(typeMap));
+        passes.push_back(new P4::TypeChecking(refMap, typeMap, true));
+        passes.push_back(new CopyMatchKeysToSingleStruct(refMap, typeMap, &invokedInKey));
+        passes.push_back(new P4::ResolveReferences(refMap));
         passes.push_back(new StatementUnroll(refMap, collector));
         passes.push_back(new IfStatementUnroll(refMap, collector));
         passes.push_back(new P4::ClearTypeMap(typeMap));
@@ -624,16 +748,20 @@ class RewriteToDpdkArch : public PassManager {
         }));
         passes.push_back(new CollectLocalVariableToMetadata(
             &parsePsa->toBlockInfo, info, refMap));
+        auto collect_errors = new CollectErrors();
+        passes.push_back(collect_errors);
+        error_map = &collect_errors->error_map;
         auto checksum_convertor = new ConvertInternetChecksum(typeMap, info);
         passes.push_back(checksum_convertor);
         csum_map = &checksum_convertor->csum_map;
-        auto p = new PrependPDotToActionArgs(&parsePsa->toBlockInfo, refMap);
+        auto p = new PrependPDotToActionArgs(&parsePsa->toBlockInfo, typeMap, refMap);
         args_struct_map = &p->args_struct_map;
         passes.push_back(p);
         passes.push_back(new ConvertLogicalExpression);
-        auto insertRegDeclaration = new AddRegisterDeclaration(typeMap);
-        passes.push_back(insertRegDeclaration);
-        reg_map = &insertRegDeclaration->reg_map;
+        auto insertExternDeclaration = new CollectExternDeclaration(typeMap);
+        passes.push_back(insertExternDeclaration);
+        externDecls = &insertExternDeclaration->externDecls;
+        passes.push_back(new DpdkArchLast());
     }
 };
 
