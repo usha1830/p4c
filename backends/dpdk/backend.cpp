@@ -19,6 +19,7 @@ limitations under the License.
 #include "dpdkAsmOpt.h"
 #include "dpdkHelpers.h"
 #include "dpdkProgram.h"
+#include "dpdkContext.h"
 #include "midend/eliminateTypedefs.h"
 #include "ir/dbprint.h"
 #include "ir/ir.h"
@@ -76,6 +77,7 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         new CollectProgramStructure(refMap, typeMap, &structure),
         new InspectDpdkProgram(refMap, typeMap, &structure),
         new DpdkArchLast(),
+        new GenerateContextJson(refMap, typeMap, &structure, options),
         // convert to assembly program
         convertToDpdk,
     };

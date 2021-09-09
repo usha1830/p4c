@@ -1036,9 +1036,9 @@ std::tuple<const IR::P4Table*, cstring>
 SplitP4TableCommon::create_match_table(const IR::P4Table *tbl) {
     cstring actionName;
     if (implementation == TableImplementation::ACTION_SELECTOR) {
-        actionName = refMap->newName(tbl->name + "_set_group_id");
+        actionName = refMap->newName(tbl->name.originalName + "_set_group_id");
     } else if (implementation == TableImplementation::ACTION_PROFILE) {
-        actionName = refMap->newName(tbl->name + "_set_member_id");
+        actionName = refMap->newName(tbl->name.originalName + "_set_member_id");
     } else {
         BUG("Unexpected table implementation type");
     }
@@ -1064,6 +1064,8 @@ SplitP4TableCommon::create_match_table(const IR::P4Table *tbl) {
         properties.push_back(new IR::Property("size",
                              new IR::ExpressionValue(tbl->getSizeProperty()), false)); }
     auto match_table = new IR::P4Table(tbl->name, new IR::TableProperties(properties));
+    std::cout << "\nAdded table \n";
+    match_table->dbprint(std::cout);
     return std::make_tuple(match_table, actionName);
 }
 
@@ -1077,6 +1079,9 @@ SplitP4TableCommon::create_action(cstring actionName, cstring group_id, cstring 
     auto action = new IR::P4Action(
             actionName, hidden, new IR::ParameterList({ parameter }),
             new IR::BlockStatement({ set_id }));
+    std::cout << "\nAdded Action \n";
+    action->dbprint(std::cout);
+    action->annotations->dbprint(std::cout);
     return action;
 }
 
@@ -1090,6 +1095,9 @@ SplitP4TableCommon::create_member_table(const IR::P4Table* tbl,
     IR::IndexedVector<IR::Property> member_properties;
     member_properties.push_back(new IR::Property("key", new IR::Key(member_keys), false));
 
+    auto hidden = new IR::Annotations();
+    hidden->add(new IR::Annotation(IR::Annotation::hiddenAnnotation, {}));
+
     IR::IndexedVector<IR::ActionListElement> memberActionList;
     for (auto action : tbl->getActionList()->actionList)
         memberActionList.push_back(action);
@@ -1101,8 +1109,8 @@ SplitP4TableCommon::create_member_table(const IR::P4Table* tbl,
     member_properties.push_back(new IR::Property("default_action",
                                 new IR::ExpressionValue(tbl->getDefaultAction()), false));
 
-    cstring memberTableName = refMap->newName(tbl->name + "_member_table");
-    auto member_table = new IR::P4Table(memberTableName,
+    cstring memberTableName = refMap->newName(tbl->name.originalName + "_member_table");
+    auto member_table = new IR::P4Table(memberTableName, hidden,
                                         new IR::TableProperties(member_properties));
 
     return member_table;
@@ -1117,6 +1125,8 @@ SplitP4TableCommon::create_group_table(const IR::P4Table* tbl, cstring group_id,
             selector_keys.push_back(key);
         }
     }
+    auto hidden = new IR::Annotations();
+    hidden->add(new IR::Annotation(IR::Annotation::hiddenAnnotation, {}));
     IR::IndexedVector<IR::Property> selector_properties;
     selector_properties.push_back(new IR::Property("selector", new IR::Key(selector_keys), false));
     selector_properties.push_back(new IR::Property("group_id",
@@ -1129,8 +1139,8 @@ SplitP4TableCommon::create_group_table(const IR::P4Table* tbl, cstring group_id,
     selector_properties.push_back(new IR::Property("n_members_per_group_max",
         new IR::ExpressionValue(new IR::Constant(n_members_per_group_max)), false));
     selector_properties.push_back(new IR::Property("actions", new IR::ActionList({}), false));
-    cstring selectorTableName = refMap->newName(tbl->name + "_group_table");
-    auto group_table = new IR::P4Table(selectorTableName,
+    cstring selectorTableName = refMap->newName(tbl->name.originalName + "_group_table");
+    auto group_table = new IR::P4Table(selectorTableName, hidden,
                                        new IR::TableProperties(selector_properties));
     return group_table;
 }
@@ -1173,8 +1183,8 @@ const IR::Node* SplitActionSelectorTable::postorder(IR::P4Table* tbl) {
 
     auto decls = new IR::IndexedVector<IR::Declaration>();
 
-    cstring group_id = refMap->newName(tbl->name + "_group_id");
-    cstring member_id = refMap->newName(tbl->name + "_member_id");
+    cstring group_id = refMap->newName(tbl->name.originalName + "_group_id");
+    cstring member_id = refMap->newName(tbl->name.originalName + "_member_id");
 
     auto group_id_decl = new IR::Declaration_Variable(group_id, IR::Type_Bits::get(32));
     auto member_id_decl = new IR::Declaration_Variable(member_id, IR::Type_Bits::get(32));
