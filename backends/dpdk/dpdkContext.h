@@ -20,19 +20,50 @@ limitations under the License.
 #include "dpdkProgramStructure.h"
 #include "options.h"
 #include "lib/nullstream.h"
-namespace DPDK {
-class CollectTablesForContextJson : public Inspector {
-    DpdkProgramStructure *structure;	
-    std::map<const cstring, IR::IndexedVector<IR::Declaration>> &tables_map;
 
-  public:
-    CollectTablesForContextJson(DpdkProgramStructure *structure, std::map<const cstring, IR::IndexedVector<IR::Declaration>> &tables_map)
-        : structure(structure), tables_map(tables_map) {}
-    bool preorder(const IR::P4Program *p) override;
+/**
+Context JSON for DPDK
+This is a JSON file used by the control plane software for manipulating tables and
+actions. It contains all relevant information regarding the tables and actions.
+The context JSON is based on the below JSON Schema.
+//TODO copy the schema from schema file
+
+*/
+
+namespace DPDK {
+
+/* This structure holds table attributes required for context JSON which are not
+    part of P4Table */
+struct TableAttributes {
+    // Direction of the table, can be ["ingress","egress"]
+    cstring direction;
+    // Unique ID for the table
+    unsigned tableHandle;
 };
 
+/* Collect tables and set table attributes for generating context JSON */
+class CollectTablesForContextJson : public Inspector {
+    DpdkProgramStructure *structure;
+    // Vector of all tables in the program, includes compiler generated tables
+    IR::IndexedVector<IR::Declaration> &tables;
+    std::map<const cstring, struct TableAttributes> &tableAttrmap;
+    static unsigned newTableHandle;
+
+  public:
+    CollectTablesForContextJson(DpdkProgramStructure *structure,
+        IR::IndexedVector<IR::Declaration> &tables, std::map<const cstring,
+        struct TableAttributes> &tableAttrmap)
+        : structure(structure), tables(tables), tableAttrmap(tableAttrmap) {}
+
+    bool preorder(const IR::P4Program *p) override;
+    unsigned int getNewTableHandle();
+    void setTableAttributes ();
+};
+
+/* This structure holds action attributes required for context JSON which are not
+   part of P4Action */
 struct actionAttributes {
-    bool constant_default_action;    
+    bool constant_default_action;
     bool is_compiler_added_action;
     bool allowed_as_hit_action;
     bool allowed_as_default_action;
@@ -40,32 +71,34 @@ struct actionAttributes {
     IR::IndexedVector<IR::Parameter> *params;
 };
 
+/* This pass outputs the context JSON into the file specified by user */
 class WriteContextJson : public Inspector {
     P4::ReferenceMap *refmap;
     P4::TypeMap *typemap;
     DpdkProgramStructure *structure;
     DpdkOptions &options;
-    std::map<const cstring, IR::IndexedVector<IR::Declaration>> &tables_map;
-    static int newTableHandle;
-    static int newActionHandle;
+    IR::IndexedVector<IR::Declaration> &tables;
+    std::map<const cstring, struct TableAttributes> &tableAttrmap;
+    static unsigned newActionHandle;
  public:
-    WriteContextJson(P4::ReferenceMap *refmap, P4::TypeMap *typemap, DpdkProgramStructure *structure, 
-	    DpdkOptions &options, std::map<const cstring, IR::IndexedVector<IR::Declaration>> &tables_map)
-        : refmap(refmap), typemap(typemap), structure(structure), options(options), tables_map(tables_map) {}
+    WriteContextJson(P4::ReferenceMap *refmap, P4::TypeMap *typemap, DpdkProgramStructure *structure,
+	    DpdkOptions &options, IR::IndexedVector<IR::Declaration> &tables, std::map<const cstring, struct TableAttributes> &tableAttrmap)
+        : refmap(refmap), typemap(typemap), structure(structure), options(options), tables(tables), tableAttrmap(tableAttrmap) {}
 
-    unsigned int getNewHandle(bool isTable);
-    void add_space(std::ostream &out, int size);
     bool preorder(const IR::P4Program *p) override;
+    unsigned int getNewActionHandle();
+    void add_space(std::ostream &out, int size);
     void setActionAttributes (std::map <cstring, struct actionAttributes> &actionAttrMap, const IR::P4Table *tbl);
-    void printTableCtxtJson (cstring direction, const IR::P4Table *tbl, std::ostream &out);
+    void printTableCtxtJson (const IR::P4Table *tbl, std::ostream &out);
 };
-        
+
 class GenerateContextJson : public PassManager {
     P4::ReferenceMap *refmap;
     P4::TypeMap *typemap;
     DpdkProgramStructure *structure;
     DpdkOptions &options;
-    std::map<const cstring, IR::IndexedVector<IR::Declaration>> tables_map;
+    IR::IndexedVector<IR::Declaration> tables;
+    std::map<const cstring, struct TableAttributes> tableAttrmap;
 
 public:
     GenerateContextJson(
@@ -74,10 +107,11 @@ public:
         : refmap(refmap), typemap(typemap), structure(structure), options(options){
 
         addPasses( {
-            new CollectTablesForContextJson(structure, tables_map),
-            new WriteContextJson(refmap, typemap, structure, options, tables_map)
+            new CollectTablesForContextJson(structure, tables, tableAttrmap),
+            new WriteContextJson(refmap, typemap, structure, options, tables, tableAttrmap)
         });
     }
 };
 } // namespace DPDK
 #endif
+
