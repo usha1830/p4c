@@ -1064,8 +1064,6 @@ SplitP4TableCommon::create_match_table(const IR::P4Table *tbl) {
         properties.push_back(new IR::Property("size",
                              new IR::ExpressionValue(tbl->getSizeProperty()), false)); }
     auto match_table = new IR::P4Table(tbl->name, new IR::TableProperties(properties));
-    std::cout << "\nAdded table \n";
-    match_table->dbprint(std::cout);
     return std::make_tuple(match_table, actionName);
 }
 
@@ -1079,9 +1077,6 @@ SplitP4TableCommon::create_action(cstring actionName, cstring group_id, cstring 
     auto action = new IR::P4Action(
             actionName, hidden, new IR::ParameterList({ parameter }),
             new IR::BlockStatement({ set_id }));
-    std::cout << "\nAdded Action \n";
-    action->dbprint(std::cout);
-    action->annotations->dbprint(std::cout);
     return action;
 }
 

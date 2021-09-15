@@ -25,9 +25,8 @@ limitations under the License.
 Context JSON for DPDK
 This is a JSON file used by the control plane software for manipulating tables and
 actions. It contains all relevant information regarding the tables and actions.
-The context JSON is based on the below JSON Schema.
-//TODO copy the schema from schema file
-
+The context JSON is based on the JSON Schema defined in the below file.
+backends/dpdk/dpdk_Context_Schema.json
 */
 
 namespace DPDK {
@@ -39,6 +38,11 @@ struct TableAttributes {
     cstring direction;
     // Unique ID for the table
     unsigned tableHandle;
+    /* Table type can one of "match", "selection" and "action
+       Match table is a regular P4 table, selection table and action tables are compiler
+       generated tables when psa_implementation is action_selector or action_profile */
+    cstring tableType;
+    bool isHidden;
 };
 
 /* Collect tables and set table attributes for generating context JSON */
@@ -90,6 +94,8 @@ class WriteContextJson : public Inspector {
     void add_space(std::ostream &out, int size);
     void setActionAttributes (std::map <cstring, struct actionAttributes> &actionAttrMap, const IR::P4Table *tbl);
     void printTableCtxtJson (const IR::P4Table *tbl, std::ostream &out);
+    void printSelTableCtxtJson (const IR::P4Table *tbl, std::ostream &out);
+    void printActionTableCtxtJson (const IR::P4Table *tbl, std::ostream &out);
 };
 
 class GenerateContextJson : public PassManager {
