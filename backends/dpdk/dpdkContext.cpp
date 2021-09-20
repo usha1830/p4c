@@ -262,7 +262,7 @@ void WriteContextJson::printTableCtxtJson (const IR::P4Table *tbl, std::ostream 
             add_space(out, 20); out << "\"start_bit\": 0,\n";
             add_space(out, 20); out << "\"bit_width\": " << mkf->expression->type->width_bits() << ",\n";
             add_space(out, 20); out << "\"bit_width_full\": "  << mkf->expression->type->width_bits() << ",\n";
-            add_space(out, 20); out << "\"index\":" << index << "\n";
+            add_space(out, 20); out << "\"position\":" << index << "\n";
             add_space(out, 20); out << "} ";
             index++;
             } else {
