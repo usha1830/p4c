@@ -14,11 +14,11 @@ struct a2_arg_t {
 	bit<16> param
 }
 
-struct tbl2_0_set_member_id_arg_t {
+struct tbl2_set_member_id_arg_t {
 	bit<32> member_id
 }
 
-struct tbl_0_set_member_id_arg_t {
+struct tbl_set_member_id_arg_t {
 	bit<32> member_id
 }
 
@@ -89,12 +89,12 @@ action a2 args instanceof a2_arg_t {
 	return
 }
 
-action tbl_0_set_member_id args instanceof tbl_0_set_member_id_arg_t {
+action tbl_set_member_id args instanceof tbl_set_member_id_arg_t {
 	mov m.Ingress_tbl_0_member_id t.member_id
 	return
 }
 
-action tbl2_0_set_member_id args instanceof tbl2_0_set_member_id_arg_t {
+action tbl2_set_member_id args instanceof tbl2_set_member_id_arg_t {
 	mov m.Ingress_tbl2_0_member_id t.member_id
 	return
 }
@@ -104,7 +104,7 @@ table tbl {
 		h.ethernet.srcAddr exact
 	}
 	actions {
-		tbl_0_set_member_id
+		tbl_set_member_id
 		NoAction
 	}
 	default_action NoAction args none 
@@ -112,7 +112,7 @@ table tbl {
 }
 
 
-table tbl_0_member_table {
+table tbl_member_table {
 	key {
 		m.Ingress_tbl_0_member_id exact
 	}
@@ -131,7 +131,7 @@ table tbl2 {
 		h.ethernet.srcAddr exact
 	}
 	actions {
-		tbl2_0_set_member_id
+		tbl2_set_member_id
 		NoAction
 	}
 	default_action NoAction args none 
@@ -139,7 +139,7 @@ table tbl2 {
 }
 
 
-table tbl2_0_member_table {
+table tbl2_member_table {
 	key {
 		m.Ingress_tbl2_0_member_id exact
 	}
@@ -158,9 +158,9 @@ apply {
 	mov m.psa_ingress_output_metadata_drop 0x0
 	extract h.ethernet
 	table tbl
-	table tbl_0_member_table
+	table tbl_member_table
 	table tbl2
-	table tbl2_0_member_table
+	table tbl2_member_table
 	jmpneq LABEL_DROP m.psa_ingress_output_metadata_drop 0x0
 	emit h.ethernet
 	tx m.psa_ingress_output_metadata_egress_port
