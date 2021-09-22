@@ -81,6 +81,14 @@ ParserOptions::ParserOptions() : Util::Options(defaultMessage) {
         },
         "Undefine macro (passed to preprocessor)");
     registerOption(
+        "-O", nullptr,
+        [this](const char* ) {
+            doNotOptimize = true;
+            std::cout << "Registering -0 option\n" << std::endl;
+            return true;
+        },
+        "Compile without optimizations)");
+     registerOption(
         "-E", nullptr,
         [this](const char* ) {
             doNotCompile = true;

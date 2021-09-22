@@ -64,6 +64,8 @@ class ParserOptions : public Util::Options {
     cstring file = nullptr;
     // if true preprocess only
     bool doNotCompile = false;
+    // if true no optimization
+    bool doNotOptimize = false;
     // Compiler version.
     cstring compilerVersion;
     // if true skip preprocess

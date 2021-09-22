@@ -130,7 +130,7 @@ const IR::P4Program *FrontEnd::run(const CompilerOptions &options, const IR::P4P
     ReferenceMap  refMap;
     TypeMap       typeMap;
     refMap.setIsV1(isv1);
-
+    std::vector<cstring> FrontEndO1Passes = {"ConstantFolding", "InstantiateDirectCalls"};
     auto evaluator = new P4::EvaluatorPass(&refMap, &typeMap);
     PassManager passes({
         new P4V1::getV1ModelVersion,
@@ -224,6 +224,10 @@ const IR::P4Program *FrontEnd::run(const CompilerOptions &options, const IR::P4P
 
     if (options.excludeFrontendPasses) {
        passes.removePasses(options.passesToExcludeFrontend);
+    }
+
+    if (options.doNotOptimize) {
+       passes.removePasses(FrontEndO1Passes);
     }
 
     passes.setName("FrontEnd");

@@ -106,6 +106,9 @@ def main():
     parser.add_argument("-E", dest="run_preprocessor_only",
                         help="Only run the preprocessor",
                         action="store_true", default=False)
+    parser.add_argument("-O0",
+                        help="compile without optimization",
+                        action="store_true", default=False)
     parser.add_argument("-e", dest="skip_preprocessor",
                         help="Skip the preprocessor",
                         action="store_true", default=False)

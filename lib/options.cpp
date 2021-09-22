@@ -27,6 +27,7 @@ void Util::Options::registerOption(
         throw std::logic_error(
             std::string("Expected option to start with -: ") + option);
     auto o = new Option();
+    std::cout << "Register option called for " << option << std::endl;
     o->option = option;
     o->argName = argName;
     o->processor = processor;
@@ -37,6 +38,9 @@ void Util::Options::registerOption(
         throw std::logic_error(std::string("Option already registered: ") +
                                option);
     options.emplace(option, o);
+    std::cout << " option added to map\n" << option <<  o << std::endl;
+    auto opt1 = get(options, option);
+    std::cout << "Option fetched from map\n" << opt1 << std::endl;
     optionOrder.push_back(option);
 }
 
@@ -51,7 +55,7 @@ std::vector<const char*>* Util::Options::process(int argc,
         cstring opt = argv[i];
         const char* arg = nullptr;
         const Option* option = nullptr;
-
+        std::cout << "Option " << opt << "\n" << std::endl;
         if (opt.startsWith("--")) {
             option = get(options, opt);
             if (!option && (arg = opt.find('=')))
