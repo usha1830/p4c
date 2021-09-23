@@ -1,4 +1,5 @@
-/* Copyright 2021 Intel Corporation
+/*
+Copyright 2020 Intel Corp.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,10 +23,11 @@ limitations under the License.
 
 /**
 Context JSON for DPDK
-This is a JSON file used by the control plane software for manipulating tables and
+This is a JSON file used by the control plane software for manipulating tables and 
 actions. It contains all relevant information regarding the tables and actions.
-The context JSON is based on the JSON Schema defined in the below file.
-backends/dpdk/dpdk_Context_Schema.json
+The context JSON is based on the below JSON Schema.
+//TODO copy the schema from schema file
+
 */
 
 namespace DPDK {
@@ -37,24 +39,26 @@ struct TableAttributes {
     cstring direction;
     // Unique ID for the table
     unsigned tableHandle;
-    /* Table type can one of "match", "selection" and "action
-       Match table is a regular P4 table, selection table and action tables are compiler
+    /* Table type can one of "match", "selection" and "action 
+       Match table is a regular P4 table, selection table and action tables are compiler 
        generated tables when psa_implementation is action_selector or action_profile */
     cstring tableType;
     bool isHidden;
+    cstring controlName;
+    std::vector<cstring> tableKeys;
 };
 
 /* Collect tables and set table attributes for generating context JSON */
 class CollectTablesForContextJson : public Inspector {
     DpdkProgramStructure *structure;
-    // Vector of all tables in the program, includes compiler generated tables
+    // Vector of all tables in the program, includes compiler generated tables	
     IR::IndexedVector<IR::Declaration> &tables;
     std::map<const cstring, struct TableAttributes> &tableAttrmap;
     static unsigned newTableHandle;
-
+    
   public:
-    CollectTablesForContextJson(DpdkProgramStructure *structure,
-        IR::IndexedVector<IR::Declaration> &tables, std::map<const cstring,
+    CollectTablesForContextJson(DpdkProgramStructure *structure, 
+        IR::IndexedVector<IR::Declaration> &tables, std::map<const cstring, 
         struct TableAttributes> &tableAttrmap)
         : structure(structure), tables(tables), tableAttrmap(tableAttrmap) {}
 
@@ -66,7 +70,7 @@ class CollectTablesForContextJson : public Inspector {
 /* This structure holds action attributes required for context JSON which are not
    part of P4Action */
 struct actionAttributes {
-    bool constant_default_action;
+    bool constant_default_action;    
     bool is_compiler_added_action;
     bool allowed_as_hit_action;
     bool allowed_as_default_action;
@@ -82,9 +86,10 @@ class WriteContextJson : public Inspector {
     DpdkOptions &options;
     IR::IndexedVector<IR::Declaration> &tables;
     std::map<const cstring, struct TableAttributes> &tableAttrmap;
+    std::map <cstring, struct actionAttributes> actionAttrMap;
     static unsigned newActionHandle;
  public:
-    WriteContextJson(P4::ReferenceMap *refmap, P4::TypeMap *typemap, DpdkProgramStructure *structure,
+    WriteContextJson(P4::ReferenceMap *refmap, P4::TypeMap *typemap, DpdkProgramStructure *structure, 
 	    DpdkOptions &options, IR::IndexedVector<IR::Declaration> &tables, std::map<const cstring, struct TableAttributes> &tableAttrmap)
         : refmap(refmap), typemap(typemap), structure(structure), options(options), tables(tables), tableAttrmap(tableAttrmap) {}
 

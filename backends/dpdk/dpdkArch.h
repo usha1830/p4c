@@ -522,6 +522,18 @@ class ConvertLogicalExpression : public PassManager {
     }
 };
 
+// This Pass collects infomation about the table keys for each table. This information
+// is later used for generating the context JSON output for use by the control plane
+// software.
+class CollectTableInfo : public Inspector {
+    DpdkProgramStructure *structure;
+
+  public:
+    CollectTableInfo(DpdkProgramStructure *structure)
+        : structure(structure) {setName("CollectTableInfo");} 
+    bool preorder(const IR::Key *key) override;
+};
+
 // This pass transforms the tables such that all the Match keys are part of the same
 // header/metadata struct. If the match keys are from different headers, this pass creates
 // mirror copies of the struct field into the metadata struct and updates the table to use
@@ -545,13 +557,14 @@ class SplitP4TableCommon : public Transform {
     enum class TableImplementation { DEFAULT, ACTION_PROFILE, ACTION_SELECTOR };
     P4::ReferenceMap* refMap;
     P4::TypeMap* typeMap;
+    DpdkProgramStructure *structure; 
     TableImplementation implementation;
     std::set<cstring> match_tables;
     std::map<cstring, cstring> group_tables;
     std::map<cstring, cstring> member_tables;
 
-    SplitP4TableCommon(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) :
-        refMap(refMap), typeMap(typeMap) {
+    SplitP4TableCommon(P4::ReferenceMap *refMap, P4::TypeMap* typeMap, DpdkProgramStructure *structure) :
+        refMap(refMap), typeMap(typeMap), structure(structure) {
         implementation = TableImplementation::DEFAULT;
     }
 
@@ -561,8 +574,8 @@ class SplitP4TableCommon : public Transform {
 
     std::tuple<const IR::P4Table*, cstring> create_match_table(const IR::P4Table* /* tbl */);
     const IR::P4Action* create_action(cstring /* actionName */, cstring /* id */, cstring);
-    const IR::P4Table* create_member_table(const IR::P4Table*, cstring);
-    const IR::P4Table* create_group_table(const IR::P4Table*, cstring, cstring, int, int);
+    const IR::P4Table* create_member_table(const IR::P4Table*, cstring, cstring);
+    const IR::P4Table* create_group_table(const IR::P4Table*, cstring, cstring, cstring, int, int);
 };
 
 /**
@@ -574,8 +587,8 @@ class SplitP4TableCommon : public Transform {
 class SplitActionSelectorTable : public SplitP4TableCommon {
   public:
 
-    SplitActionSelectorTable(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) :
-        SplitP4TableCommon(refMap, typeMap) {
+    SplitActionSelectorTable(P4::ReferenceMap *refMap, P4::TypeMap* typeMap, DpdkProgramStructure *structure) :
+        SplitP4TableCommon(refMap, typeMap, structure) {
         implementation = TableImplementation::ACTION_SELECTOR; }
     const IR::Node* postorder(IR::P4Table* tbl) override;
 };
@@ -587,8 +600,8 @@ class SplitActionSelectorTable : public SplitP4TableCommon {
  */
 class SplitActionProfileTable : public SplitP4TableCommon {
  public:
-    SplitActionProfileTable(P4::ReferenceMap* refMap, P4::TypeMap* typeMap) :
-        SplitP4TableCommon(refMap, typeMap) {
+    SplitActionProfileTable(P4::ReferenceMap* refMap, P4::TypeMap* typeMap, DpdkProgramStructure *structure) :
+        SplitP4TableCommon(refMap, typeMap, structure) {
         implementation = TableImplementation::ACTION_PROFILE; }
     const IR::Node* postorder(IR::P4Table* tbl) override;
 };
@@ -597,13 +610,14 @@ class SplitActionProfileTable : public SplitP4TableCommon {
  * Handle ActionSelector and ActionProfile extern in PSA
  */
 class ConvertActionSelectorAndProfile : public PassManager {
+    DpdkProgramStructure *structure; 
  public:
-    ConvertActionSelectorAndProfile(P4::ReferenceMap *refMap, P4::TypeMap* typeMap) {
+    ConvertActionSelectorAndProfile(P4::ReferenceMap *refMap, P4::TypeMap* typeMap, DpdkProgramStructure *structure) {
         passes.emplace_back(new P4::TypeChecking(refMap, typeMap));
-        passes.emplace_back(new SplitActionSelectorTable(refMap, typeMap));
+        passes.emplace_back(new SplitActionSelectorTable(refMap, typeMap, structure));
         passes.push_back(new P4::ClearTypeMap(typeMap));
         passes.emplace_back(new P4::TypeChecking(refMap, typeMap, true));
-        passes.emplace_back(new SplitActionProfileTable(refMap, typeMap));
+        passes.emplace_back(new SplitActionProfileTable(refMap, typeMap, structure));
         passes.push_back(new P4::ClearTypeMap(typeMap));
         passes.emplace_back(new P4::TypeChecking(refMap, typeMap, true));
     }
