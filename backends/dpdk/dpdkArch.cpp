@@ -87,7 +87,12 @@ ConvertToDpdkArch::rewriteControlType(const IR::Type_Control *c, cstring name) {
     if (name == "Ingress" || name == "Egress") {
         auto header = c->applyParams->parameters.at(0);
         applyParams->push_back(new IR::Parameter(IR::ID("h"), header->direction, header->type));
+
         auto meta = c->applyParams->parameters.at(1);
+        if (name == "Ingress") {
+            structure->headerParam = header->name.name;
+            structure->metadataParam = meta->name.name;
+        }
         applyParams->push_back(new IR::Parameter(IR::ID("m"), meta->direction, meta->type));
     } else if (name == "PreControlT") {
         auto header = c->applyParams->parameters.at(0);
@@ -328,6 +333,24 @@ bool CollectMetadataHeaderInfo::preorder(const IR::Type_Struct *s) {
     return true;
 }
 
+bool CollectTableInfo::preorder(const IR::Key *keys) {
+    std::vector<cstring> tableKeys;
+    if (!keys || keys->keyElements.size() == 0) {
+        return false;
+    }
+    /* Key fields should be part of same header/metadata struct */
+    for (auto key : keys->keyElements) {
+        cstring keyTypeStr = key->expression->toString();
+        if (key->matchType->toString() != "selector")
+            tableKeys.push_back(keyTypeStr);
+    }
+   
+    auto control =  findOrigCtxt<IR::P4Control>();
+    auto table =  findOrigCtxt<IR::P4Table>();
+    structure->key_map.emplace(control->name.originalName + "_" + table->name.originalName, tableKeys);
+    return false;
+}
+
 const IR::Node *InjectJumboStruct::preorder(IR::Type_Struct *s) {
     if (s->name == structure->local_metadata_type) {
         auto *annotations = new IR::Annotations(
@@ -435,7 +458,6 @@ bool ExpressionUnroll::preorder(const IR::Operation_Unary *u) {
         } else if (u->to<IR::LNot>()) {
             un_expr = new IR::LNot(root);
         } else {
-            std::cout << u->node_type_name() << std::endl;
             BUG("Not Implemented");
         }
     } else {
@@ -1081,7 +1103,7 @@ SplitP4TableCommon::create_action(cstring actionName, cstring group_id, cstring 
 }
 
 const IR::P4Table*
-SplitP4TableCommon::create_member_table(const IR::P4Table* tbl,
+SplitP4TableCommon::create_member_table(const IR::P4Table* tbl, cstring memberTableName,
         cstring member_id) {
     IR::Vector<IR::KeyElement> member_keys;
     auto tableKeyEl = new IR::KeyElement(new IR::PathExpression(member_id),
@@ -1089,7 +1111,7 @@ SplitP4TableCommon::create_member_table(const IR::P4Table* tbl,
     member_keys.push_back(tableKeyEl);
     IR::IndexedVector<IR::Property> member_properties;
     member_properties.push_back(new IR::Property("key", new IR::Key(member_keys), false));
-
+    
     auto hidden = new IR::Annotations();
     hidden->add(new IR::Annotation(IR::Annotation::hiddenAnnotation, {}));
 
@@ -1104,15 +1126,14 @@ SplitP4TableCommon::create_member_table(const IR::P4Table* tbl,
     member_properties.push_back(new IR::Property("default_action",
                                 new IR::ExpressionValue(tbl->getDefaultAction()), false));
 
-    cstring memberTableName = refMap->newName(tbl->name.originalName + "_member_table");
     auto member_table = new IR::P4Table(memberTableName, hidden,
                                         new IR::TableProperties(member_properties));
-
+    
     return member_table;
 }
 
 const IR::P4Table*
-SplitP4TableCommon::create_group_table(const IR::P4Table* tbl, cstring group_id, cstring member_id,
+SplitP4TableCommon::create_group_table(const IR::P4Table* tbl, cstring selectorTableName, cstring group_id, cstring member_id,
         int n_groups_max, int n_members_per_group_max) {
     IR::Vector<IR::KeyElement> selector_keys;
     for (auto key : tbl->getKey()->keyElements) {
@@ -1134,7 +1155,6 @@ SplitP4TableCommon::create_group_table(const IR::P4Table* tbl, cstring group_id,
     selector_properties.push_back(new IR::Property("n_members_per_group_max",
         new IR::ExpressionValue(new IR::Constant(n_members_per_group_max)), false));
     selector_properties.push_back(new IR::Property("actions", new IR::ActionList({}), false));
-    cstring selectorTableName = refMap->newName(tbl->name.originalName + "_group_table");
     auto group_table = new IR::P4Table(selectorTableName, hidden,
                                        new IR::TableProperties(selector_properties));
     return group_table;
@@ -1193,19 +1213,24 @@ const IR::Node* SplitActionSelectorTable::postorder(IR::P4Table* tbl) {
     auto action = create_action(actionName, group_id, "group_id");
     decls->push_back(action);
     decls->push_back(match_table);
-
+    cstring member_table_name = *instance->name;
+    member_table_name = member_table_name.findlast('.');
+    member_table_name = member_table_name.trim(".\t\n\r");
+    cstring group_table_name = member_table_name + "_sel";
     // group table match on group_id
-    auto group_table = create_group_table(tbl, group_id, member_id,
+    auto group_table = create_group_table(tbl, group_table_name, group_id, member_id,
                                           n_groups_max, n_members_per_group_max);
     decls->push_back(group_table);
 
     // member table match on member_id
-    auto member_table = create_member_table(tbl, member_id);
+    auto member_table = create_member_table(tbl, member_table_name, member_id);
     decls->push_back(member_table);
 
     match_tables.insert(tbl->name);
-    group_tables.emplace(tbl->name, group_table->name);
     member_tables.emplace(tbl->name, member_table->name);
+    group_tables.emplace(tbl->name, group_table->name);
+    structure->member_tables.emplace(tbl->name, member_table);
+    structure->group_tables.emplace(tbl->name, group_table);
 
     return decls;
 }
@@ -1241,13 +1266,17 @@ const IR::Node* SplitActionProfileTable::postorder(IR::P4Table* tbl) {
     auto action = create_action(actionName, member_id, "member_id");
     decls->push_back(action);
     decls->push_back(match_table);
+    cstring member_table_name = *instance->name;
+    member_table_name = member_table_name.findlast('.');
+    member_table_name = member_table_name.trim(".\t\n\r");
 
     // member table match on member_id
-    auto member_table = create_member_table(tbl, member_id);
+    auto member_table = create_member_table(tbl, member_table_name, member_id);
     decls->push_back(member_table);
 
     match_tables.insert(tbl->name);
     member_tables.emplace(tbl->name, member_table->name);
+    structure->member_tables.emplace(tbl->name, member_table);
 
     return decls;
 }

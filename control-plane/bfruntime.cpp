@@ -292,7 +292,9 @@ BFRuntimeGenerator::addKeyField(Util::JsonArray* dataJson, P4Id id, cstring name
 BFRuntimeGenerator::initTableJson(const std::string& name,
         P4Id id, cstring tableType, int64_t size, Util::JsonArray* annotations) {
     auto* tableJson = new Util::JsonObject();
-    tableJson->emplace("name", name);
+    const std::string tableName = "pipe." + name;
+//    tableJson->emplace("name", name);
+    tableJson->emplace("name", tableName);
     tableJson->emplace("id", id);
     tableJson->emplace("table_type", tableType);
     tableJson->emplace("size", size);
@@ -303,13 +305,18 @@ BFRuntimeGenerator::initTableJson(const std::string& name,
 
 /* static */ void
 BFRuntimeGenerator::addToDependsOn(Util::JsonObject* tableJson, P4Id id) {
+    std::cout << "Reached 1" << "\n";
     auto* dependsOnJson = tableJson->get("depends_on")->to<Util::JsonArray>();
+    std::cout << "Reached 2" << "\n";
     CHECK_NULL(dependsOnJson);
     // Skip duplicates
+    std::cout << "Reached 3" << "\n";
     for (auto *d : *dependsOnJson) {
         if (*d->to<Util::JsonValue>() == id) return;
     }
+    std::cout << "Reached 4" << "\n";
     dependsOnJson->append(id);
+    std::cout << "Reached 5" << "\n";
 }
 
 void
@@ -563,6 +570,7 @@ BFRuntimeGenerator::makeActionSpecs(const p4configv1::Table& table,
         const auto& pre = action->preamble();
         spec->emplace("id", pre.id());
         spec->emplace("name", pre.name());
+//        spec->emplace("name", actName);
         switch (action_ref.scope()) {
             case p4configv1::ActionRef::TABLE_AND_DEFAULT:
                 spec->emplace("action_scope", "TableAndDefault");
@@ -658,8 +666,8 @@ BFRuntimeGenerator::addMatchTables(Util::JsonArray* tablesJson) const {
 
         auto* annotations = transformAnnotations(
             pre.annotations().begin(), pre.annotations().end());
-
         auto* tableJson = initTableJson(
+//            tableName, pre.id(), "MatchAction_Direct", table.size(), annotations);
             pre.name(), pre.id(), "MatchAction_Direct", table.size(), annotations);
 
         if (!addActionProfIds(table, tableJson)) continue;

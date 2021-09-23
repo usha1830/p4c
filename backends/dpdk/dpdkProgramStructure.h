@@ -32,10 +32,15 @@ struct DpdkProgramStructure {
     std::map<const IR::Declaration_Instance *, cstring>         csum_map;
     std::map<cstring, int>                                      error_map;
     std::vector<const IR::Declaration_Instance *>               externDecls;
+    std::map<cstring, std::vector<cstring>>                     key_map;
+    std::map<cstring, const IR::P4Table *> group_tables;
+    std::map<cstring, const IR::P4Table *> member_tables;
 
     IR::Type_Struct * metadataStruct;
     cstring local_metadata_type;
     cstring header_type;
+    cstring metadataParam;
+    cstring headerParam;
     IR::IndexedVector<IR::StructField> fields;
     IR::Vector<IR::Type> used_metadata;
 
