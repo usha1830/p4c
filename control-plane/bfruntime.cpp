@@ -305,18 +305,18 @@ BFRuntimeGenerator::initTableJson(const std::string& name,
 
 /* static */ void
 BFRuntimeGenerator::addToDependsOn(Util::JsonObject* tableJson, P4Id id) {
-    std::cout << "Reached 1" << "\n";
+//    std::cout << "Reached 1" << "\n";
     auto* dependsOnJson = tableJson->get("depends_on")->to<Util::JsonArray>();
-    std::cout << "Reached 2" << "\n";
+  //  std::cout << "Reached 2" << "\n";
     CHECK_NULL(dependsOnJson);
     // Skip duplicates
-    std::cout << "Reached 3" << "\n";
+   // std::cout << "Reached 3" << "\n";
     for (auto *d : *dependsOnJson) {
         if (*d->to<Util::JsonValue>() == id) return;
     }
-    std::cout << "Reached 4" << "\n";
+   // std::cout << "Reached 4" << "\n";
     dependsOnJson->append(id);
-    std::cout << "Reached 5" << "\n";
+//    std::cout << "Reached 5" << "\n";
 }
 
 void
@@ -569,8 +569,11 @@ BFRuntimeGenerator::makeActionSpecs(const p4configv1::Table& table,
         auto* spec = new Util::JsonObject();
         const auto& pre = action->preamble();
         spec->emplace("id", pre.id());
-        spec->emplace("name", pre.name());
-//        spec->emplace("name", actName);
+        if (pre.name().find(".NoAction") != std::string::npos) {
+            spec->emplace("name", "NoAction");
+        } else {
+            spec->emplace("name", pre.name());
+        }
         switch (action_ref.scope()) {
             case p4configv1::ActionRef::TABLE_AND_DEFAULT:
                 spec->emplace("action_scope", "TableAndDefault");
