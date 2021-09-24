@@ -305,18 +305,13 @@ BFRuntimeGenerator::initTableJson(const std::string& name,
 
 /* static */ void
 BFRuntimeGenerator::addToDependsOn(Util::JsonObject* tableJson, P4Id id) {
-//    std::cout << "Reached 1" << "\n";
     auto* dependsOnJson = tableJson->get("depends_on")->to<Util::JsonArray>();
-  //  std::cout << "Reached 2" << "\n";
     CHECK_NULL(dependsOnJson);
     // Skip duplicates
-   // std::cout << "Reached 3" << "\n";
     for (auto *d : *dependsOnJson) {
         if (*d->to<Util::JsonValue>() == id) return;
     }
-   // std::cout << "Reached 4" << "\n";
     dependsOnJson->append(id);
-//    std::cout << "Reached 5" << "\n";
 }
 
 void
