@@ -264,7 +264,10 @@ void WriteContextJson::printTableCtxtJson (const IR::P4Table *tbl, std::ostream 
         add_space(out, 12);
     }
     out << "],\n";
-     add_space (out, 12); out << "\"action_profile\": \"" << memberTable->name.originalName <<"\",\n";
+    if (hasActionProfileSelector) {
+        std::cout << "Reached 1\n" ;
+        add_space (out, 12); out << "\"action_profile\": \"" << memberTable->name.originalName <<"\",\n";
+    }
     add_space (out, 12); out << "\"match_key_fields\": [";
     auto match_keys = tbl->getKey();
 
