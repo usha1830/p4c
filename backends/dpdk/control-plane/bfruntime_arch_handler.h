@@ -61,7 +61,6 @@ cstring prefix(cstring p, cstring str) {
     return p.isNullOrEmpty() ? str : p + "." + str;
 }
 
-
 /// Extends P4RuntimeSymbolType for the DPDK extern types.
 class SymbolTypeDPDK final : public SymbolType {
  public:
