@@ -1230,9 +1230,7 @@ const IR::Node* SplitActionSelectorTable::postorder(IR::P4Table* tbl) {
     bool isAsInstanceShared = false;
     cstring implementation = "psa_implementation";
 
-    if (structure->isPSA()) {
-        implementation = "psa_implementation";
-    } else if (structure->isPNA()) {
+    if (structure->isPNA()) {
         implementation = "pna_implementation";
     }
 
@@ -1349,9 +1347,8 @@ const IR::Node* SplitActionProfileTable::postorder(IR::P4Table* tbl) {
     bool isConstructedInPlace = false;
     bool isApInstanceShared = false;
     cstring implementation = "psa_implementation";
-    if (structure->isPSA())
-        implementation = "psa_implementation";
-    else if (structure->isPNA())
+
+    if (structure->isPNA())
         implementation = "pna_implementation";
 
     auto instance = Helpers::getExternInstanceFromProperty(tbl, implementation,
