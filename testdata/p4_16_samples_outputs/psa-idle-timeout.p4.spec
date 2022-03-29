@@ -27,24 +27,8 @@ struct psa_egress_deparser_input_metadata_t {
 	bit<32> egress_port
 }
 
-struct a1_1_arg_t {
-	bit<48> param
-}
-
-struct a1_2_arg_t {
-	bit<48> param
-}
-
 struct a1_arg_t {
 	bit<48> param
-}
-
-struct a2_1_arg_t {
-	bit<16> param
-}
-
-struct a2_2_arg_t {
-	bit<16> param
 }
 
 struct a2_arg_t {
@@ -69,27 +53,7 @@ action a1 args instanceof a1_arg_t {
 	return
 }
 
-action a1_1 args instanceof a1_1_arg_t {
-	mov h.ethernet.dstAddr t.param
-	return
-}
-
-action a1_2 args instanceof a1_2_arg_t {
-	mov h.ethernet.dstAddr t.param
-	return
-}
-
 action a2 args instanceof a2_arg_t {
-	mov h.ethernet.etherType t.param
-	return
-}
-
-action a2_1 args instanceof a2_1_arg_t {
-	mov h.ethernet.etherType t.param
-	return
-}
-
-action a2_2 args instanceof a2_2_arg_t {
 	mov h.ethernet.etherType t.param
 	return
 }
@@ -114,8 +78,8 @@ table tbl_no_idle_timeout {
 	}
 	actions {
 		NoAction
-		a1_1
-		a2_1
+		a1
+		a2
 	}
 	default_action NoAction args none 
 	size 0x10000
@@ -128,8 +92,8 @@ table tbl_no_idle_timeout_prop {
 	}
 	actions {
 		NoAction
-		a1_2
-		a2_2
+		a1
+		a2
 	}
 	default_action NoAction args none 
 	size 0x10000

@@ -65,7 +65,7 @@ action action1 args instanceof action1_arg_t {
 	return
 }
 
-action drop_1 args none {
+action drop args none {
 	mov m.psa_ingress_output_metadata_egress_port 0x4
 	return
 }
@@ -76,9 +76,9 @@ table table1 {
 	}
 	actions {
 		action1
-		drop_1
+		drop
 	}
-	default_action drop_1 args none 
+	default_action drop args none 
 	size 0x100000
 }
 

@@ -69,7 +69,7 @@ action NoAction args none {
 	return
 }
 
-action execute_1 args none {
+action execute args none {
 	jmpneq LABEL_FALSE_0 m.Ingress_err 0x1
 	jmp LABEL_END_0
 	LABEL_FALSE_0 :	mov m.local_metadata_data 0x1
@@ -82,7 +82,7 @@ table tbl {
 	}
 	actions {
 		NoAction
-		execute_1
+		execute
 	}
 	default_action NoAction args none 
 	size 0x10000

@@ -66,7 +66,7 @@ action NoAction args none {
 	return
 }
 
-action execute_1 args none {
+action execute args none {
 	mov m.local_metadata_data 0x1
 	return
 }
@@ -77,7 +77,7 @@ table tbl {
 	}
 	actions {
 		NoAction
-		execute_1
+		execute
 	}
 	default_action NoAction args none 
 	size 0x10000

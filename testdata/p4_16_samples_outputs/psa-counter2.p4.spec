@@ -44,7 +44,7 @@ action NoAction args none {
 	return
 }
 
-action execute_1 args none {
+action execute args none {
 	regadd counter0_0 0x400 1
 	regadd counter1_0 0x400 1
 	return
@@ -56,7 +56,7 @@ table tbl {
 	}
 	actions {
 		NoAction
-		execute_1
+		execute
 	}
 	default_action NoAction args none 
 	size 0x10000
