@@ -164,6 +164,18 @@ const IR::IndexedVector<IR::DpdkAsmStatement> *RemoveLabelAfterLabel::removeLabe
     return new_l;
 }
 
+bool RemoveUnusedMetadataFields::isByteSizeField(const IR::Type *field_type) {
+    // DPDK implements bool and error types as bit<8>
+    if (field_type->is<IR::Type_Boolean>() || field_type->is<IR::Type_Error>())
+        return true;
+
+    if (auto t = field_type->to<IR::Type_Name>()) {
+        if (t->path->name != "error")
+            return true;
+    }
+    return false;
+}
+
 const IR::Node* RemoveUnusedMetadataFields::preorder(IR::DpdkAsmProgram *p) {
     IR::IndexedVector<IR::DpdkStructType> usedStruct;
     bool isMetadataStruct = false;
@@ -175,18 +187,9 @@ const IR::Node* RemoveUnusedMetadataFields::preorder(IR::DpdkAsmProgram *p) {
                     IR::IndexedVector<IR::StructField> usedMetadataFields;
                     for (auto field : st->fields) {
                         if (used_fields.count(field->name.name)) {
-                            // DPDK implements bool and error types as bit<8>
-                            if (field->type->is<IR::Type_Boolean>() ||
-                                field->type->is<IR::Type_Error>()) {
+                            if (isByteSizeField(field->type)) {
                                 usedMetadataFields.push_back(new IR::StructField(
                                                       IR::ID(field->name), IR::Type_Bits::get(8)));
-                            } else if (auto t = field->type->to<IR::Type_Name>()) {
-                                if (t->path->name != "error") {
-                                    usedMetadataFields.push_back(new IR::StructField(
-                                                      IR::ID(field->name), IR::Type_Bits::get(8)));
-                                } else {
-                                    usedMetadataFields.push_back(field);
-                                }
                             } else {
                                 usedMetadataFields.push_back(field);
                             }
@@ -206,6 +209,22 @@ const IR::Node* RemoveUnusedMetadataFields::preorder(IR::DpdkAsmProgram *p) {
     }
     p->structType = usedStruct;
     return p;
+}
+
+int ValidateTableKeys::getFieldSizeBits(const IR::Type *field_type) {
+    if (auto t = field_type->to<IR::Type_Bits>()) {
+        return t->width_bits();
+    } else if (field_type->is<IR::Type_Boolean>() ||
+        field_type->is<IR::Type_Error>()) {
+        return 8;
+    } else if (auto t = field_type->to<IR::Type_Name>()) {
+        if (t->path->name == "error") {
+            return 8;
+        } else {
+            return -1;
+        }
+    }
+    return -1;
 }
 
 bool ValidateTableKeys::isMetadataStruct(const IR::Type_Struct *st) {
@@ -244,19 +263,10 @@ bool ValidateTableKeys::preorder(const IR::DpdkAsmProgram *p) {
                 if (max == -1 || max < offset) {
                     max = offset;
                     auto field_type = key->expression->type;
-                    if (auto t = field_type->to<IR::Type_Bits>()) {
-                        size_max_field = t->width_bits();
-                    } else if (field_type->is<IR::Type_Boolean>() ||
-                        field_type->is<IR::Type_Error>()) {
-                        size_max_field = 8;
-                    } else if (auto t = field_type->to<IR::Type_Name>()) {
-                        if (t->path->name == "error") {
-                            size_max_field = 8;
-                        } else {
-                            BUG("Unexpected type %1%", t->path->name);
-                        }
-                    } else {
+                    size_max_field = getFieldSizeBits(field_type);
+                    if (size_max_field == -1) {
                         BUG("Unexpected type %1%", field_type->node_type_name());
+                        return false;
                     }
                  }
              }

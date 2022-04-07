@@ -160,6 +160,17 @@ class RemoveUnusedMetadataFields : public Transform {
     explicit RemoveUnusedMetadataFields(ordered_set<cstring>& used_fields)
         : used_fields(used_fields) {}
     const IR::Node* preorder(IR::DpdkAsmProgram *p) override;
+    bool isByteSizeField(const IR::Type *field_type);
+};
+
+// This pass validates that the table keys from Metadata struct fit within 64 bytes including any
+// holes between the key fields in metadata.
+class ValidateTableKeys : public Inspector {
+ public:
+    ValidateTableKeys() {}
+    bool preorder(const IR::DpdkAsmProgram *p) override;
+    bool isMetadataStruct(const IR::Type_Struct *st);
+    int getFieldSizeBits(const IR::Type *field_type);
 };
 
 // This pass validates that the table keys from Metadata struct fit within 64 bytes including any
