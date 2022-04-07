@@ -114,6 +114,8 @@ void FindTypeSpecializations::postorder(const IR::Type_Specialized* type) {
         insert = findContext<IR::Declaration_Constant>();
     if (!insert)
         insert = findContext<IR::Declaration_Variable>();
+    if (!insert)
+        insert = findContext<IR::Declaration_Instance>();
     CHECK_NULL(insert);
     specMap->add(type, st, insert);
 }
@@ -128,6 +130,7 @@ const IR::Node* CreateSpecializedTypes::postorder(IR::Type_Declaration* type) {
             TypeVariableSubstitution ts;
             ts.setBindings(type, genDecl->getTypeParameters(), specialized->arguments);
             TypeSubstitutionVisitor tsv(specMap->typeMap, &ts);
+            tsv.setCalledBy(this);
             auto renamed = type->apply(tsv)->to<IR::Type_StructLike>()->clone();
             cstring name = it.second->name;
             auto empty = new IR::TypeParameters();

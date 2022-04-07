@@ -1,5 +1,5 @@
 #include <core.p4>
-#include <psa.p4>
+#include <bmv2/psa.p4>
 
 header EMPTY_H {
 }
@@ -81,7 +81,9 @@ control MyIC(inout header_t a, inout EMPTY_M b, in psa_ingress_input_metadata_t 
         default_action = NoAction();
     }
     apply {
-        if (!a.ethernet.isValid()) {
+        if (a.ethernet.isValid()) {
+            ;
+        } else {
             tbl.apply();
         }
     }

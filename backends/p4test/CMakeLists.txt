@@ -102,6 +102,16 @@ set (P4_XFAIL_TESTS
   # appear as the value of the psa_direct_counter table attribute for at most
   # one table."
   testdata/p4_16_samples/psa-counter6.p4
+  # This program uses a list of expressions on the 'psa_implementation' property
+  # which is currently unsupported
+  testdata/p4_16_samples/psa-action-profile2.p4
+  # This program uses conditional execution inside action body which is currently
+  # unsupported
+  testdata/p4_16_samples/psa-dpdk-action-jumpOpt.p4
+  # These tests are added to check mirror_packet extern invocation with non-constant
+  # arguments and with incorrect number of arguments
+  testdata/p4_16_samples/pna-example-mirror-packet-error2.p4
+  testdata/p4_16_samples/pna-example-mirror-packet-error3.p4
   )
 # we invoke p4c with --p4runtime-files even for programs in p4_16_errors. This
 # enables us to use p4_16_errors even for programs which pass compilation but
@@ -113,6 +123,9 @@ p4c_add_tests_w_p4runtime("p4" ${P4TEST_DRIVER} "${P4TEST_SUITES}" "${P4_XFAIL_T
 set (P4TEST_PARSERUNROLL
   "${P4C_SOURCE_DIR}/testdata/p4_16_samples/parser-unroll-*.p4")
 p4c_add_tests("p4unroll" ${P4TEST_DRIVER} "${P4TEST_PARSERUNROLL}" "" "-a '--maxErrorCount 100 --loopsUnroll'")
+
+set (P4TEST_PARSER_INLINE_TESTS "${P4C_SOURCE_DIR}/testdata/p4_16_samples/parser-inline/*.p4")
+p4c_add_tests("p4" ${P4TEST_DRIVER} "${P4TEST_PARSER_INLINE_TESTS}" "" "-a '--maxErrorCount 100 --parser-inline-opt'")
 
 set (P4TEST_ERRORS
   "${P4C_SOURCE_DIR}/testdata/p4_16_errors/*.p4"

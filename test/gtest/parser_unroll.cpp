@@ -49,7 +49,6 @@
 #include "midend/predication.h"
 #include "midend/removeExits.h"
 #include "midend/removeMiss.h"
-#include "midend/removeParameters.h"
 #include "midend/removeSelectBooleans.h"
 #include "midend/simplifyKey.h"
 #include "midend/simplifySelectCases.h"
@@ -105,7 +104,6 @@ class MidEnd : public PassManager {
             new P4::RemoveMiss(&refMap, &typeMap),
             new P4::EliminateNewtype(&refMap, &typeMap),
             new P4::EliminateSerEnums(&refMap, &typeMap),
-            new P4::RemoveActionParameters(&refMap, &typeMap),
             new P4::SimplifyKey(&refMap, &typeMap,
                                 new P4::OrPolicy(
                                     new P4::IsValid(&refMap, &typeMap),
@@ -231,12 +229,12 @@ std::pair<const IR::P4Parser*, const IR::P4Parser*> rewriteParser(const IR::P4Pr
 
 /// Loads example from a file
 const IR::P4Program* load_model(const char* curFile, CompilerOptions& options) {
-    std::string includeDir = std::string(relPath) + std::string("p4include");
+    std::string includeDir = std::string(buildPath) + std::string("p4include");
     auto originalEnv = getenv("P4C_16_INCLUDE_PATH");
     setenv("P4C_16_INCLUDE_PATH", includeDir.c_str(), 1);
     options.loopsUnrolling = true;
     options.compilerVersion = P4TEST_VERSION_STRING;
-    options.file = relPath;
+    options.file = sourcePath;
     options.file += "testdata/p4_16_samples/";
     options.file += curFile;
     auto program = P4::parseP4File(options);
@@ -308,6 +306,13 @@ TEST_F(P4CParserUnroll, noLoopsAndHeaderStacks) {
 
 TEST_F(P4CParserUnroll, t1_Cond) {
     auto parsers =  loadExample("parser-unroll-t1-cond.p4");
+    ASSERT_TRUE(parsers.first);
+    ASSERT_TRUE(parsers.second);
+    ASSERT_EQ(parsers.first->states.size(), parsers.second->states.size());
+}
+
+TEST_F(P4CParserUnroll, header_union) {
+    auto parsers =  loadExample("issue561-7-bmv2.p4");
     ASSERT_TRUE(parsers.first);
     ASSERT_TRUE(parsers.second);
     ASSERT_EQ(parsers.first->states.size(), parsers.second->states.size());

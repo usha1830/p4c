@@ -48,10 +48,28 @@ bool CodeGenInspector::preorder(const IR::Declaration_Variable* decl) {
     return false;
 }
 
+static cstring getMask(P4::TypeMap* typeMap, const IR::Node* node) {
+    auto type = typeMap->getType(node, true);
+    cstring mask = "";
+    if (auto tb = type->to<IR::Type_Bits>()) {
+        if (tb->size != 8 && tb->size != 16 && tb->size != 32 && tb->size != 64)
+            mask = " & ((1 << " + Util::toString(tb->size) + ") - 1)";
+    }
+    return mask;
+}
+
 bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
-    widthCheck(b);
+    if (!b->is<IR::BOr>() &&
+        !b->is<IR::BAnd>() &&
+        !b->is<IR::BXor>() &&
+        !b->is<IR::Equ>() &&
+        !b->is<IR::Neq>())
+        widthCheck(b);
+    cstring mask = getMask(typeMap, b);
     int prec = expressionPrecedence;
-    bool useParens = getParent<IR::IfStatement>() == nullptr;
+    bool useParens = getParent<IR::IfStatement>() == nullptr || mask != "";
+    if (mask != "")
+        builder->append("(");
     if (useParens)
         builder->append("(");
     visit(b->left);
@@ -62,7 +80,10 @@ bool CodeGenInspector::preorder(const IR::Operation_Binary* b) {
     visit(b->right);
     if (useParens)
         builder->append(")");
+    builder->append(mask);
     expressionPrecedence = prec;
+    if (mask != "")
+        builder->append(")");
     return false;
 }
 
@@ -99,7 +120,6 @@ bool CodeGenInspector::comparison(const IR::Operation_Relation* b) {
 }
 
 bool CodeGenInspector::preorder(const IR::Mux* b) {
-    widthCheck(b);
     int prec = expressionPrecedence;
     bool useParens = prec >= b->getPrecedence();
     if (useParens)
@@ -121,7 +141,10 @@ bool CodeGenInspector::preorder(const IR::Mux* b) {
 bool CodeGenInspector::preorder(const IR::Operation_Unary* u) {
     widthCheck(u);
     int prec = expressionPrecedence;
-    bool useParens = prec > u->getPrecedence();
+    cstring mask = getMask(typeMap, u);
+    bool useParens = prec > u->getPrecedence() || mask != "";
+    if (mask != "")
+        builder->append("(");
     if (useParens)
         builder->append("(");
     builder->append(u->getStringOp());
@@ -129,6 +152,9 @@ bool CodeGenInspector::preorder(const IR::Operation_Unary* u) {
     visit(u->expr);
     expressionPrecedence = prec;
     if (useParens)
+        builder->append(")");
+    builder->append(mask);
+    if (mask != "")
         builder->append(")");
     return false;
 }
@@ -174,7 +200,12 @@ bool CodeGenInspector::preorder(const IR::Member* expression) {
     auto ei = P4::EnumInstance::resolve(expression, typeMap);
     if (ei == nullptr) {
         visit(expression->expr);
-        builder->append(".");
+        auto pe = expression->expr->to<IR::PathExpression>();
+        if (pe != nullptr && isPointerVariable(pe->path->name.name)) {
+            builder->append("->");
+        } else {
+            builder->append(".");
+        }
     }
     builder->append(expression->member);
     expressionPrecedence = prec;
@@ -190,6 +221,27 @@ bool CodeGenInspector::preorder(const IR::Path* p) {
     if (p->absolute)
         ::error(ErrorType::ERR_EXPECTED, "%1%: Unexpected absolute path", p);
     builder->append(p->name);
+    return false;
+}
+
+bool CodeGenInspector::preorder(const IR::StructExpression *expr) {
+    builder->append("(struct ");
+    CHECK_NULL(expr->structType);
+    visit(expr->structType);
+    builder->append(")");
+    builder->append("{");
+    bool first = true;
+    for (auto c : expr->components) {
+        if (!first)
+            builder->append(", ");
+        builder->append(".");
+        builder->append(c->name);
+        builder->append(" = ");
+        visit(c->expression);
+        first = false;
+    }
+    builder->append("}");
+
     return false;
 }
 
@@ -388,11 +440,13 @@ void CodeGenInspector::widthCheck(const IR::Node* node) const {
     if (tb->size % 8 == 0 && EBPFScalarType::generatesScalar(tb->size))
         return;
 
-    if (tb->size <= 64)
-        // This is a bug which we can probably fix
-        BUG("%1%: Computations on %2% bits not yet supported", node, tb->size);
-    // We could argue that this may not be supported ever
-    ::error(ErrorType::ERR_OVERLIMIT,
+    if (tb->size <= 64) {
+        if (!tb->isSigned)
+            return;
+        ::error(ErrorType::ERR_UNSUPPORTED_ON_TARGET,
+               "%1%: Computations on signed %2% bits not yet supported", node, tb->size);
+    }
+    ::error(ErrorType::ERR_UNSUPPORTED_ON_TARGET,
             "%1%: Computations on %2% bits not supported", node, tb->size);
 }
 

@@ -72,8 +72,12 @@ class ParserOptions : public Util::Options {
     std::vector<cstring> top4;
     // debugging dumps of programs written in this folder
     cstring dumpFolder = ".";
+    // If false, optimization of callee parsers (subparsers) inlining is disabled.
+    bool optimizeParserInlining = false;
     // Expect that the only remaining argument is the input file.
     void setInputFile();
+    // Return target specific include path.
+    const char *getIncludePath() override;
     // Returns the output of the preprocessor.
     FILE* preprocess();
     // Closes the input stream returned by preprocess.
@@ -85,6 +89,10 @@ class ParserOptions : public Util::Options {
     DebugHook getDebugHook() const;
     // Check whether this particular annotation was disabled
     bool isAnnotationDisabled(const IR::Annotation *a) const;
+    // Search and set 'includePathOut' to be the first valid path from the
+    // list of possible relative paths.
+    bool searchForIncludePath(const char*& includePathOut,
+        std::vector<cstring> relativePaths, const char*);
 };
 
 /// A compilation context which exposes compiler options and a compiler

@@ -14,19 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#ifndef BACKEND_DPDK_OPTIMIZATION_H_
-#define BACKEND_DPDK_OPTIMIZATION_H_
+#ifndef BACKENDS_DPDK_DPDKASMOPT_H_
+#define BACKENDS_DPDK_DPDKASMOPT_H_
 
-#include "backends/bmv2/common/action.h"
-#include "backends/bmv2/common/control.h"
-#include "backends/bmv2/common/deparser.h"
-#include "backends/bmv2/common/extern.h"
-#include "backends/bmv2/common/header.h"
-#include "backends/bmv2/common/helpers.h"
-#include "backends/bmv2/common/lower.h"
-#include "backends/bmv2/common/parser.h"
-#include "backends/bmv2/common/programStructure.h"
-#include "backends/bmv2/psa_switch/psaSwitch.h"
 #include "frontends/common/constantFolding.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/coreLibrary.h"
@@ -39,11 +29,29 @@ limitations under the License.
 #include "ir/ir.h"
 #include "lib/gmputil.h"
 #include "lib/json.h"
+
+#define DPDK_TABLE_MAX_KEY_SIZE 64*8
+
 namespace DPDK {
 // This pass removes label that no jmps jump to
 class RemoveRedundantLabel : public Transform {
-  public:
-    const IR::Node *postorder(IR::DpdkListStatement *l) override;
+ public:
+    const IR::IndexedVector<IR::DpdkAsmStatement> *removeRedundantLabel(
+                      const IR::IndexedVector<IR::DpdkAsmStatement> &s);
+
+    const IR::Node *postorder(IR::DpdkListStatement *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeRedundantLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
+
+    const IR::Node *postorder(IR::DpdkAction *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeRedundantLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
 };
 
 // This pass removes jmps that jump to a label that is immediately after it.
@@ -54,8 +62,22 @@ class RemoveRedundantLabel : public Transform {
 // jmp label1 will be removed.
 
 class RemoveConsecutiveJmpAndLabel : public Transform {
-  public:
-    const IR::Node *postorder(IR::DpdkListStatement *l) override;
+ public:
+    const IR::IndexedVector<IR::DpdkAsmStatement> *removeJmpAndLabel(
+                   const IR::IndexedVector<IR::DpdkAsmStatement> &s);
+    const IR::Node *postorder(IR::DpdkListStatement *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeJmpAndLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
+
+    const IR::Node *postorder(IR::DpdkAction *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeJmpAndLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
 };
 
 // This pass removes labels whose next instruction is a jmp statement. This pass
@@ -74,21 +96,97 @@ class RemoveConsecutiveJmpAndLabel : public Transform {
 // jmp label2
 
 class ThreadJumps : public Transform {
-  public:
-    const IR::Node *postorder(IR::DpdkListStatement *l) override;
+ public:
+    const IR::IndexedVector<IR::DpdkAsmStatement> *threadJumps(
+             const IR::IndexedVector<IR::DpdkAsmStatement> &s);
+
+    const IR::Node *postorder(IR::DpdkListStatement *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = threadJumps(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
+
+    const IR::Node *postorder(IR::DpdkAction *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = threadJumps(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
 };
 
 // This pass removes labels whose next instruction is a label. In addition, it
 // will update any jmp that jump to this label to the label next to it.
 
 class RemoveLabelAfterLabel : public Transform {
-  public:
-    const IR::Node *postorder(IR::DpdkListStatement *l) override;
+ public:
+    const IR::IndexedVector<IR::DpdkAsmStatement> *removeLabelAfterLabel(
+                  const IR::IndexedVector<IR::DpdkAsmStatement> &s);
+
+    const IR::Node *postorder(IR::DpdkListStatement *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeLabelAfterLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
+
+    const IR::Node *postorder(IR::DpdkAction *l) override {
+        const IR::IndexedVector<IR::DpdkAsmStatement> *newStmts;
+        newStmts = removeLabelAfterLabel(l->statements);
+        l->statements = *newStmts;
+        return l;
+    }
 };
 
+
+// This pass Collects all metadata struct member used in program
+class CollectUsedMetadataField : public Inspector {
+    ordered_set<cstring>& used_fields;
+ public:
+    explicit CollectUsedMetadataField(ordered_set<cstring>& used_fields)
+        : used_fields(used_fields) {}
+    bool preorder(const IR::Member *m) override {
+        // metadata struct field used like m.<field_name> in expressions
+        if (m->expr->toString() == "m")
+            used_fields.insert(m->member.toString());
+        return true;
+    }
+};
+
+// This pass removes all unused fields from metadata struct
+class RemoveUnusedMetadataFields : public Transform {
+    ordered_set<cstring>& used_fields;
+ public:
+    explicit RemoveUnusedMetadataFields(ordered_set<cstring>& used_fields)
+        : used_fields(used_fields) {}
+    const IR::Node* preorder(IR::DpdkAsmProgram *p) override;
+    bool isByteSizeField(const IR::Type *field_type);
+};
+
+// This pass validates that the table keys from Metadata struct fit within 64 bytes including any
+// holes between the key fields in metadata.
+class ValidateTableKeys : public Inspector {
+ public:
+    ValidateTableKeys() {}
+    bool preorder(const IR::DpdkAsmProgram *p) override;
+    bool isMetadataStruct(const IR::Type_Struct *st);
+    int getFieldSizeBits(const IR::Type *field_type);
+};
+
+// This pass validates that the table keys from Metadata struct fit within 64 bytes including any
+// holes between the key fields in metadata.
+class ValidateTableKeys : public Inspector {
+ public:
+    ValidateTableKeys() {}
+    bool preorder(const IR::DpdkAsmProgram *p) override;
+    bool isMetadataStruct(const IR::Type_Struct *st);
+};
+
+// Instructions can only appear in actions and apply block of .spec file.
+// All these individual passes work on the actions and apply block of .spec file.
 class DpdkAsmOptimization : public PassRepeated {
-  private:
-  public:
+ private:
+ public:
     DpdkAsmOptimization() {
         passes.push_back(new RemoveRedundantLabel);
         auto r = new PassRepeated{new RemoveLabelAfterLabel};
@@ -100,5 +198,5 @@ class DpdkAsmOptimization : public PassRepeated {
     }
 };
 
-} // namespace DPDK
-#endif
+}  // namespace DPDK
+#endif  /* BACKENDS_DPDK_DPDKASMOPT_H_ */

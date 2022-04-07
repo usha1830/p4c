@@ -36,6 +36,7 @@ limitations under the License.
 #include "midend/eliminateNewtype.h"
 #include "midend/eliminateSerEnums.h"
 #include "midend/eliminateSwitch.h"
+#include "midend/eliminateTypedefs.h"
 #include "midend/flattenHeaders.h"
 #include "midend/flattenInterfaceStructs.h"
 #include "midend/replaceSelectRange.h"
@@ -44,7 +45,6 @@ limitations under the License.
 #include "midend/parserUnroll.h"
 #include "midend/removeLeftSlices.h"
 #include "midend/removeMiss.h"
-#include "midend/removeParameters.h"
 #include "midend/removeUnusedParameters.h"
 #include "midend/simplifyKey.h"
 #include "midend/simplifySelectCases.h"
@@ -76,7 +76,6 @@ SimpleSwitchMidEnd::SimpleSwitchMidEnd(CompilerOptions& options, std::ostream* o
             new P4::RemoveMiss(&refMap, &typeMap),
             new P4::EliminateNewtype(&refMap, &typeMap),
             new P4::EliminateSerEnums(&refMap, &typeMap),
-            new P4::RemoveActionParameters(&refMap, &typeMap),
             convertEnums,
             [this, convertEnums]() { enumMap = convertEnums->getEnumMapping(); },
             new P4::OrderArguments(&refMap, &typeMap),
@@ -118,6 +117,7 @@ SimpleSwitchMidEnd::SimpleSwitchMidEnd(CompilerOptions& options, std::ostream* o
                                               "meters",
                                               "support_timeout" }),
             new P4::SimplifyControlFlow(&refMap, &typeMap),
+            new P4::EliminateTypedef(&refMap, &typeMap),
             new P4::CompileTimeOperations(),
             new P4::TableHit(&refMap, &typeMap),
             new P4::EliminateSwitch(&refMap, &typeMap),

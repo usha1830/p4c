@@ -22,6 +22,7 @@ limitations under the License.
 #include "frontends/p4/callGraph.h"
 #include "frontends/p4/typeChecking/typeChecker.h"
 #include "frontends/p4/typeMap.h"
+#include "frontends/p4/simplify.h"
 #include "interpreter.h"
 
 namespace P4 {
@@ -115,7 +116,7 @@ class ParserStructure {
     void calls(const IR::ParserState* caller, const IR::ParserState* callee)
     { callGraph->calls(caller, callee); }
 
-    bool analyze(ReferenceMap* refMap, TypeMap* typeMap, bool unroll);
+    bool analyze(ReferenceMap* refMap, TypeMap* typeMap, bool unroll, bool& wasError);
     /// check reachability for usage of header stack
     bool reachableHSUsage(IR::ID id, const ParserStateInfo* state) const;
 
@@ -155,14 +156,16 @@ class ParserRewriter : public PassManager {
     friend class RewriteAllParsers;
  public:
     bool hasOutOfboundState;
+    bool wasError;
     ParserRewriter(ReferenceMap* refMap,
                    TypeMap* typeMap, bool unroll) {
         CHECK_NULL(refMap); CHECK_NULL(typeMap);
+        wasError = false;
         setName("ParserRewriter");
         addPasses({
             new AnalyzeParser(refMap, &current),
             [this, refMap, typeMap, unroll](void) {
-                hasOutOfboundState = current.analyze(refMap, typeMap, unroll); },
+                hasOutOfboundState = current.analyze(refMap, typeMap, unroll, wasError); },
         });
     }
 };
@@ -185,7 +188,11 @@ class RewriteAllParsers : public Transform {
     const IR::Node* postorder(IR::P4Parser* parser) override {
         // making rewriting
         auto rewriter = new ParserRewriter(refMap, typeMap, unroll);
+        rewriter->setCalledBy(this);
         parser->apply(*rewriter);
+        if (rewriter->wasError) {
+            return parser;
+        }
         /// make a new parser
         BUG_CHECK(rewriter->current.result,
                   "No result was found after unrolling of the parser loop");
@@ -195,15 +202,28 @@ class RewriteAllParsers : public Transform {
         if (rewriter->hasOutOfboundState) {
             // generating state with verify(false, error.StackOutOfBounds)
             IR::Vector<IR::Argument>* arguments = new IR::Vector<IR::Argument>();
-            arguments->push_back(new IR::Argument(new IR::BoolLiteral(false)));
+            arguments->push_back(
+                new IR::Argument(new IR::BoolLiteral(IR::Type::Boolean::get(), false)));
             arguments->push_back(new IR::Argument(new IR::Member(
                 new IR::TypeNameExpression(new IR::Type_Name(IR::ID("error"))),
                     IR::ID("StackOutOfBounds"))));
             IR::IndexedVector<IR::StatOrDecl> components;
-            components.push_back(new IR::MethodCallStatement(
-                new IR::MethodCallExpression(new IR::PathExpression(IR::ID("verify")), arguments)));
-            auto* outOfBoundsState = new IR::ParserState(IR::ID(outOfBoundsStateName), components,
-                nullptr);
+            IR::IndexedVector<IR::Parameter> parameters;
+            parameters.push_back(
+                new IR::Parameter(IR::ID("check"), IR::Direction::In, IR::Type::Boolean::get()));
+            parameters.push_back(new IR::Parameter(IR::ID("toSignal"), IR::Direction::In,
+                                                   new IR::Type_Name(IR::ID("error"))));
+            components.push_back(new IR::MethodCallStatement(new IR::MethodCallExpression(
+                IR::Type::Void::get(),
+                new IR::PathExpression(
+                    new IR::Type_Method(IR::Type::Void::get(), new IR::ParameterList(parameters),
+                                        "*method"),
+                    new IR::Path(IR::ID("verify"))),
+                arguments)));
+            auto* outOfBoundsState = new IR::ParserState(
+                IR::ID(outOfBoundsStateName), components,
+                new IR::PathExpression(new IR::Type_State(),
+                                       new IR::Path(IR::ParserState::reject, false)));
             newParser->states.push_back(outOfBoundsState);
         }
         for (auto& i : rewriter->current.result->states) {
@@ -221,6 +241,8 @@ class RewriteAllParsers : public Transform {
 class ParsersUnroll : public PassManager {
  public:
     ParsersUnroll(bool unroll, ReferenceMap* refMap, TypeMap* typeMap) {
+        // remove block statements
+        passes.push_back(new SimplifyControlFlow(refMap, typeMap));
         passes.push_back(new TypeChecking(refMap, typeMap));
         passes.push_back(new RewriteAllParsers(refMap, typeMap, unroll));
         setName("ParsersUnroll");

@@ -299,6 +299,8 @@ struct ConversionContext {
     P4::ReferenceMap*                refMap;
     P4::TypeMap*                     typeMap;
     const IR::ToplevelBlock*         toplevel;
+    // Block currently being converted
+    BlockConverted                   blockConverted;
     //
     ProgramStructure*                structure;
     // expression converter is used in many places.
@@ -320,8 +322,14 @@ struct ConversionContext {
     ConversionContext(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
                       const IR::ToplevelBlock* toplevel, ProgramStructure* structure,
                       ExpressionConverter* conv, JsonObjects* json) :
-        refMap(refMap), typeMap(typeMap), toplevel(toplevel), structure(structure),
-        conv(conv), json(json) { }
+            refMap(refMap), typeMap(typeMap), toplevel(toplevel),
+            blockConverted(BlockConverted::None), structure(structure), conv(conv), json(json) { }
+
+    void addToFieldList(const IR::Expression* expr, Util::JsonArray* fl);
+    int createFieldList(const IR::Expression* expr, cstring listName, bool learn = false);
+    cstring createCalculation(cstring algo, const IR::Expression* fields,
+                              Util::JsonArray* calculations, bool usePayload, const IR::Node* node);
+    static void modelError(const char* format, const IR::Node* place);
 };
 
 Util::IJson* nodeName(const CFG::Node* node);
@@ -331,6 +339,8 @@ Util::JsonObject* mkPrimitive(cstring name, Util::JsonArray* appendTo);
 Util::JsonObject* mkPrimitive(cstring name);
 cstring stringRepr(big_int value, unsigned bytes = 0);
 unsigned nextId(cstring group);
+/// Converts expr into a ListExpression or returns nullptr if not possible
+const IR::ListExpression* convertToList(const IR::Expression* expr, P4::TypeMap* typeMap);
 
 }  // namespace BMV2
 

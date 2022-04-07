@@ -77,13 +77,13 @@ void ControlBodyTranslator::processCustomExternFunction(const P4::ExternFunction
 }
 
 void ControlBodyTranslator::processFunction(const P4::ExternFunction* function) {
-    if (!control->emitExterns)
-        ::error(ErrorType::ERR_UNSUPPORTED, "%1%: Not supported", function->method);
     processCustomExternFunction(function, EBPFTypeFactory::instance);
 }
 
 bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression) {
-    builder->append("/* ");
+    if (commentDescriptionDepth == 0)
+        builder->append("/* ");
+    commentDescriptionDepth++;
     visit(expression->method);
     builder->append("(");
     bool first = true;
@@ -94,8 +94,15 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
         visit(a);
     }
     builder->append(")");
-    builder->append("*/");
-    builder->newline();
+    if (commentDescriptionDepth == 1) {
+        builder->append(" */");
+        builder->newline();
+    }
+    commentDescriptionDepth--;
+
+    // do not process extern when comment is generated
+    if (commentDescriptionDepth != 0)
+        return false;
 
     auto mi = P4::MethodInstance::resolve(expression,
                                           control->program->refMap,
@@ -137,6 +144,9 @@ bool ControlBodyTranslator::preorder(const IR::MethodCallExpression* expression)
         // Action arguments have been eliminated by the mid-end.
         BUG_CHECK(expression->arguments->size() == 0,
                   "%1%: unexpected arguments for action call", expression);
+        cstring msg = Util::printf_format("Control: explicit calling action %s()",
+                                          ac->action->name.name);
+        builder->target->emitTraceMessage(builder, msg.c_str());
         visit(ac->action->body);
         return false;
     }
@@ -289,17 +299,20 @@ void ControlBodyTranslator::processMethod(const P4::ExternMethod* method) {
 }
 
 void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
-    builder->emitIndent();
+    P4::ParameterSubstitution binding;
+    cstring actionVariableName, msgStr;
     auto table = control->getTable(method->object->getName().name);
     BUG_CHECK(table != nullptr, "No table for %1%", method->expr);
 
-    P4::ParameterSubstitution binding;
-    cstring actionVariableName;
+    msgStr = Util::printf_format("Control: applying %s", method->object->getName().name);
+    builder->target->emitTraceMessage(builder, msgStr.c_str());
+
+    builder->emitIndent();
+
     if (!saveAction.empty()) {
         actionVariableName = saveAction.at(saveAction.size() - 1);
         if (!actionVariableName.isNullOrEmpty()) {
-            builder->appendFormat("enum %s %s;\n",
-                                  table->actionEnumName.c_str(), actionVariableName.c_str());
+            builder->appendFormat("unsigned int %s = 0;\n", actionVariableName.c_str());
             builder->emitIndent();
         }
     }
@@ -325,9 +338,9 @@ void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
     if (table->keyGenerator != nullptr) {
         builder->emitIndent();
         builder->appendLine("/* perform lookup */");
+        builder->target->emitTraceMessage(builder, "Control: performing table lookup");
         builder->emitIndent();
-        builder->target->emitTableLookup(builder, table->dataMapName, keyname, valueName);
-        builder->endOfStatement(true);
+        table->emitLookup(builder, keyname, valueName);
     }
 
     builder->emitIndent();
@@ -336,14 +349,13 @@ void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
 
     builder->emitIndent();
     builder->appendLine("/* miss; find default action */");
+    builder->target->emitTraceMessage(builder, "Control: Entry not found, going to default action");
     builder->emitIndent();
     builder->appendFormat("%s = 0", control->hitVariable.c_str());
     builder->endOfStatement(true);
 
     builder->emitIndent();
-    builder->target->emitTableLookup(builder, table->defaultActionMapName,
-                                     control->program->zeroKey, valueName);
-    builder->endOfStatement(true);
+    table->emitLookupDefault(builder, control->program->zeroKey, valueName);
     builder->blockEnd(false);
     builder->append(" else ");
     builder->blockStart();
@@ -357,21 +369,27 @@ void ControlBodyTranslator::processApply(const P4::ApplyMethod* method) {
     builder->blockStart();
     builder->emitIndent();
     builder->appendLine("/* run action */");
-    table->emitAction(builder, valueName);
-    if (!actionVariableName.isNullOrEmpty()) {
-        builder->emitIndent();
-        builder->appendFormat("%s = %s->action",
-                              actionVariableName.c_str(), valueName.c_str());
-        builder->endOfStatement(true);
-    }
+    table->emitAction(builder, valueName, actionVariableName);
     toDereference.clear();
 
-    builder->blockEnd(true);
-    builder->emitIndent();
-    builder->appendFormat("else return %s", builder->target->abortReturnCode().c_str());
+    builder->blockEnd(false);
+    builder->appendFormat(" else ");
+    builder->blockStart();
+    if (table->dropOnNoMatchingEntryFound()) {
+        builder->target->emitTraceMessage(builder, "Control: Entry not found, aborting");
+        builder->emitIndent();
+        builder->appendFormat("return %s", builder->target->abortReturnCode().c_str());
+        builder->endOfStatement(true);
+    } else {
+        builder->target->emitTraceMessage(builder,
+                                          "Control: Entry not found, executing implicit NoAction");
+    }
     builder->endOfStatement(true);
-
     builder->blockEnd(true);
+    builder->blockEnd(true);
+
+    msgStr = Util::printf_format("Control: %s applied", method->object->getName().name);
+    builder->target->emitTraceMessage(builder, msgStr.c_str());
 }
 
 bool ControlBodyTranslator::preorder(const IR::ExitStatement*) {
@@ -435,6 +453,12 @@ bool ControlBodyTranslator::preorder(const IR::SwitchStatement* statement) {
     builder->append(newName);
     builder->append(") ");
     builder->blockStart();
+
+    BUG_CHECK(mem->expr->type->is<IR::Type_Declaration>(),
+              "%1%: expected table with name", mem->expr);
+    cstring tableName = mem->expr->type->to<IR::Type_Declaration>()->name.name;
+    auto table = control->getTable(tableName);
+
     for (auto c : statement->cases) {
         builder->emitIndent();
         if (c->label->is<IR::DefaultExpression>()) {
@@ -445,8 +469,8 @@ bool ControlBodyTranslator::preorder(const IR::SwitchStatement* statement) {
             auto decl = control->program->refMap->getDeclaration(pe->path, true);
             BUG_CHECK(decl->is<IR::P4Action>(), "%1%: expected an action", pe);
             auto act = decl->to<IR::P4Action>();
-            cstring name = EBPFObject::externalName(act);
-            builder->append(name);
+            cstring fullActionName = table->p4ActionToActionIDName(act);
+            builder->append(fullActionName);
         }
         builder->append(":");
         builder->newline();
@@ -458,6 +482,24 @@ bool ControlBodyTranslator::preorder(const IR::SwitchStatement* statement) {
     }
     builder->blockEnd(false);
     saveAction.pop_back();
+    return false;
+}
+
+bool ControlBodyTranslator::preorder(const IR::StructExpression *expr) {
+    if (commentDescriptionDepth == 0)
+        return CodeGenInspector::preorder(expr);
+
+    // Dump structure for helper comment
+    builder->append("{");
+    bool first = true;
+    for (auto c : expr->components) {
+        if (!first)
+            builder->append(", ");
+        visit(c->expression);
+        first = false;
+    }
+    builder->append("}");
+
     return false;
 }
 
@@ -519,7 +561,8 @@ void EBPFControl::emitDeclaration(CodeBuilder* builder, const IR::Declaration* d
         auto vd = decl->to<IR::Declaration_Variable>();
         auto etype = EBPFTypeFactory::instance->create(vd->type);
         builder->emitIndent();
-        etype->declare(builder, vd->name, false);
+        bool isPointer = codeGen->isPointerVariable(decl->name.name);
+        etype->declareInit(builder, vd->name, isPointer);
         builder->endOfStatement(true);
         BUG_CHECK(vd->initializer == nullptr,
                   "%1%: declarations with initializers not supported", decl);

@@ -18,6 +18,10 @@ class Neg : Operation_Unary {
     stringOp = "-";
 }
 
+class UPlus : Operation_Unary {
+    stringOp = "+";
+}
+
 class Cmpl : Operation_Unary {
     stringOp = "~";
 }
@@ -435,6 +439,16 @@ class StructExpression : Expression {
 /// A ListExpression where all the components are compile-time values.
 /// This is used by the evaluator pass.
 class ListCompileTimeValue : CompileTimeValue {
+    inline Vector<Node> components;
+    validate {
+        for (auto v : components)
+            BUG_CHECK(v->is<CompileTimeValue>(), "%1%: not a compile-time value", v); }
+#nodbprint
+}
+
+/// A StructExpression where all the components are compile-time values.
+/// This is used by the evaluator pass.
+class StructCompileTimeValue : CompileTimeValue {
     inline Vector<Node> components;
     validate {
         for (auto v : components)

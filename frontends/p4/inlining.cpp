@@ -568,7 +568,10 @@ void GeneralInliner::inline_subst(P4Block *caller,
                     substs->paramSubst.add(param, initializer);
                     continue;
                 }
-                if (call != nullptr && (useTemporary.find(param) == useTemporary.end())) {
+                if (call != nullptr && (useTemporary.find(param) == useTemporary.end()) &&
+                    mi->substitution.contains(param))
+                    // This may not be true for @optional parameters
+                {
                     // Substitute argument directly
                     CHECK_NULL(mi);
                     auto initializer = mi->substitution.lookup(param);
@@ -776,14 +779,14 @@ const IR::Node* GeneralInliner::preorder(IR::ParserState* state) {
     auto srcInfo = state->srcInfo;
     auto annotations = state->annotations;
     IR::ID name = state->name;
-    for (auto e : state->components) {
-        if (!e->is<IR::MethodCallStatement>()) {
-            current.push_back(e);
+    for (auto e = state->components.begin(); e != state->components.end(); ++e) {
+        if (!(*e)->is<IR::MethodCallStatement>()) {
+            current.push_back(*e);
             continue;
         }
-        auto call = e->to<IR::MethodCallStatement>();
+        auto call = (*e)->to<IR::MethodCallStatement>();
         if (workToDo->callToInstance.find(call) == workToDo->callToInstance.end()) {
-            current.push_back(e);
+            current.push_back(*e);
             continue;
         }
 
@@ -827,17 +830,42 @@ const IR::Node* GeneralInliner::preorder(IR::ParserState* state) {
             }
         }
 
+        /**
+         * Check if there are already inlined states of the callee subparser of the same instance
+         * as this one with the same arguments, no statements after this call and transition
+         * to the same state (without select expression).
+         * If yes, we can reuse those states as after returning from callee subparser the parser
+         * continues in the same path.
+         */
+        if (optimizeParserInlining && (e + 1) == state->components.end() &&
+                state->selectExpression->is<IR::PathExpression>()) {
+            auto invoc = std::make_pair(call, state->selectExpression->to<IR::PathExpression>());
+            if (workToDo->invocationToState.find(invoc) != workToDo->invocationToState.end()) {
+                IR::ID reusedStartStateName = workToDo->invocationToState[invoc];
+                auto newState = new IR::ParserState(srcInfo, name, annotations, current,
+                        new IR::PathExpression(reusedStartStateName));
+                states->push_back(newState);
+                LOG3("Reusing inlined state: " << reusedStartStateName << " in new state: " <<
+                        dbp(newState) << std::endl <<
+                        "Replacing " << dbp(state) << " with " << states->size() << " states");
+                prune();
+                return states;
+            }
+        }
+
         callee = substs->rename<IR::P4Parser>(refMap, callee);
 
         cstring nextState = refMap->newName(state->name);
         std::map<cstring, cstring> renameMap;
         ComputeNewStateNames cnn(refMap, callee->name.name, nextState, &renameMap);
+        cnn.setCalledBy(this);
         (void)callee->apply(cnn);
         RenameStates rs(&renameMap);
+        rs.setCalledBy(this);
         auto renamed = callee->apply(rs);
-        cstring newStartName = ::get(renameMap, IR::ParserState::start);
-        auto transition = new IR::PathExpression(IR::ID(newStartName, nullptr));
-        auto newState = new IR::ParserState(srcInfo, name, annotations, current, transition);
+        IR::ID newStartName(::get(renameMap, IR::ParserState::start), IR::ParserState::start);
+        auto newState = new IR::ParserState(srcInfo, name, annotations, current,
+                new IR::PathExpression(newStartName));
         states->push_back(newState);
         for (auto s : renamed->to<IR::P4Parser>()->states) {
             if (s->name == IR::ParserState::accept ||
@@ -846,9 +874,26 @@ const IR::Node* GeneralInliner::preorder(IR::ParserState* state) {
             states->push_back(s);
         }
 
+        /**
+         * If there is no other statement after this invocation of the subparser and
+         * transition does not use select expression, we store the ID of the inlined subparser's
+         * start state, currently processed invocation statement and the transition statement
+         * expression.
+         */
+        if (optimizeParserInlining && (e + 1) == state->components.end() &&
+                state->selectExpression->is<IR::PathExpression>()) {
+            auto invoc = std::make_pair(call, state->selectExpression->to<IR::PathExpression>());
+            auto ret = workToDo->invocationToState.emplace(invoc, newStartName);
+            LOG3("Saving new start state ID: " << newStartName << " for call: " << dbp(call) <<
+                    " (" << call << ") and transition: " << dbp(state->selectExpression));
+            BUG_CHECK(ret.second == true || newStartName == ret.first->second,
+                    "State: %1% already saved, can not save: %2%!",
+                    ret.first->second, newStartName);
+        }
+
         // Prepare next state
         annotations = IR::Annotations::empty;
-        name = IR::ID(nextState, nullptr);
+        name = IR::ID(nextState, state->name);
         current.clear();
 
         // Copy back out and inout parameters

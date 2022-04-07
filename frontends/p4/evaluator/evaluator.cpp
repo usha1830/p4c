@@ -235,9 +235,14 @@ bool Evaluator::preorder(const IR::Member* expression) {
         auto ns = type->to<IR::ISimpleNamespace>();
         decl = ns->getDeclByName(expression->member.name);
     }
-    if (decl == nullptr || !decl->is<IR::Declaration_ID>())
-        return false;
-    setValue(expression, decl->to<IR::Declaration_ID>());
+    if (decl != nullptr) {
+        if (decl->is<IR::Declaration_ID>()) {
+            setValue(expression, decl->to<IR::Declaration_ID>());
+        } else if (decl->is<IR::SerEnumMember>()) {
+            setValue(expression, decl->to<IR::SerEnumMember>());
+        }
+    }
+
     return false;
 }
 
@@ -310,6 +315,22 @@ bool Evaluator::preorder(const IR::ListExpression *list) {
         }
     }
     setValue(list, new IR::ListCompileTimeValue(std::move(comp)));
+    return false;
+}
+
+bool Evaluator::preorder(const IR::StructExpression *se) {
+    LOG2("Evaluating " << se);
+    visit(se->components);
+    IR::Vector<IR::Node> comp;
+    for (auto e : se->components) {
+        if (auto value = getValue(e->expression)) {
+            CHECK_NULL(value);
+            comp.push_back(value->getNode());
+        } else {
+            return false;
+        }
+    }
+    setValue(se, new IR::StructCompileTimeValue(std::move(comp)));
     return false;
 }
 

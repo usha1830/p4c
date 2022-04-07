@@ -199,8 +199,7 @@ const LocationSet* LocationSet::getArrayLastIndex() const {
 const LocationSet* LocationSet::getField(cstring field) const {
     auto result = new LocationSet();
     for (auto l : locations) {
-        if (l->is<StructLocation>()) {
-            auto strct = l->to<StructLocation>();
+        if (auto strct = l->to<StructLocation>()) {
             if (field == StorageFactory::validFieldName && strct->isHeaderUnion()) {
                 // special handling for union.isValid()
                 for (auto f : strct->fields()) {
@@ -209,11 +208,15 @@ const LocationSet* LocationSet::getField(cstring field) const {
             } else {
                 strct->addField(field, result);
             }
-        } else {
-            BUG_CHECK(l->is<ArrayLocation>(), "%1%: expected an ArrayLocation", l);
-            auto array = l->to<ArrayLocation>();
-            for (auto f : *array)
-                f->to<StructLocation>()->addField(field, result);
+        } else if (auto array = l->to<ArrayLocation>()) {
+            for (auto f : *array) {
+                if (field == IR::Type_Stack::next ||
+                    field == IR::Type_Stack::last) {
+                    result->add(f);
+                } else {
+                    f->to<StructLocation>()->addField(field, result);
+                }
+            }
         }
     }
     return result;
@@ -666,12 +669,10 @@ bool ComputeWriteSet::preorder(const IR::MethodCallExpression* expression) {
     if (auto bim = mi->to<BuiltInMethod>()) {
         auto base = getWrites(bim->appliedTo);
         cstring name = bim->name.name;
-        if (name == IR::Type_Header::setInvalid) {
-            // modifies all fields of the header!
-            expressionWrites(expression, base);
-            return false;
-        } else if (name == IR::Type_Header::setValid) {
-            // modifies only the valid field
+        if (name == IR::Type_Header::setInvalid || name == IR::Type_Header::setValid) {
+            // modifies only the valid field.
+            // setInvalid may in fact write all fields, but
+            // it will not really "define" them.
             auto v = base->getField(StorageFactory::validFieldName);
             expressionWrites(expression, v);
             return false;
@@ -706,6 +707,7 @@ bool ComputeWriteSet::preorder(const IR::MethodCallExpression* expression) {
              DBPrint::Reset << IndentCtl::indent);
         ProgramPoint pt(callingContext, expression);
         ComputeWriteSet cw(this, pt, currentDefinitions);
+        cw.setCalledBy(this);
         for (auto c : callees)
             (void)c->getNode()->apply(cw);
         currentDefinitions = cw.currentDefinitions;
@@ -756,6 +758,7 @@ bool ComputeWriteSet::preorder(const IR::P4Parser* parser) {
 
     ParserCallGraph transitions("transitions");
     ComputeParserCG pcg(storageMap->refMap, &transitions);
+    pcg.setCalledBy(this);
 
     (void)parser->apply(pcg);
     ordered_set<const IR::ParserState*> toRun;  // worklist
@@ -771,6 +774,7 @@ bool ComputeWriteSet::preorder(const IR::P4Parser* parser) {
         ProgramPoint pt(state);
         currentDefinitions = allDefinitions->getDefinitions(pt);
         ComputeWriteSet cws(this, pt, currentDefinitions);
+        cws.setCalledBy(this);
         (void)state->apply(cws);
 
         ProgramPoint sp(state);
@@ -934,8 +938,9 @@ class GetDeclarations : public Inspector {
  public:
     GetDeclarations() : declarations(new IR::IndexedVector<IR::Declaration>())
     { setName("GetDeclarations"); }
-    static IR::IndexedVector<IR::Declaration>* get(const IR::Node* node) {
+    static IR::IndexedVector<IR::Declaration>* get(const IR::Node* node, const Visitor* calledBy) {
         GetDeclarations gd;
+        gd.setCalledBy(calledBy);
         (void)node->apply(gd);
         return gd.declarations;
     }
@@ -952,7 +957,7 @@ bool ComputeWriteSet::preorder(const IR::Function* function) {
     }
     LOG3("CWS Visiting " << dbp(function) << " called from " << callingContext);
     auto point = ProgramPoint(callingContext, function);
-    auto locals = GetDeclarations::get(function->body);
+    auto locals = GetDeclarations::get(function->body, this);
     auto saveReturned = returnedDefinitions;
     enterScope(function->type->parameters, locals, point, false);
 

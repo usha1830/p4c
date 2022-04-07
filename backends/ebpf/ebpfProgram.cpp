@@ -78,7 +78,7 @@ void EBPFProgram::emitC(CodeBuilder* builder, cstring header) {
     builder->append("REGISTER_END()\n");
     builder->newline();
     builder->emitIndent();
-    builder->target->emitCodeSection(builder, functionName);
+    builder->target->emitCodeSection(builder, "prog");
     builder->emitIndent();
     builder->target->emitMain(builder, functionName, model.CPacketName.str());
     builder->blockStart();
@@ -204,6 +204,8 @@ void EBPFProgram::emitPreamble(CodeBuilder* builder) {
     builder->newline();
     builder->appendLine("void* memcpy(void* dest, const void* src, size_t num);");
     builder->newline();
+
+    builder->target->emitPreamble(builder);
 }
 
 void EBPFProgram::emitLocalVariables(CodeBuilder* builder) {
@@ -239,6 +241,13 @@ void EBPFProgram::emitLocalVariables(CodeBuilder* builder) {
     builder->emitIndent();
     builder->appendFormat("unsigned char %s;", byteVar.c_str());
     builder->newline();
+
+    builder->emitIndent();
+    builder->appendFormat("u32 %s = %s - %s",
+                          lengthVar.c_str(),
+                          packetEndVar.c_str(),
+                          packetStartVar.c_str());
+    builder->endOfStatement(true);
 }
 
 void EBPFProgram::emitHeaderInstances(CodeBuilder* builder) {
@@ -253,8 +262,11 @@ void EBPFProgram::emitPipeline(CodeBuilder* builder) {
     builder->newline();
     builder->emitIndent();
     builder->blockStart();
+    builder->target->emitTraceMessage(builder, "Control: packet processing started");
     control->emit(builder);
     builder->blockEnd(true);
+    builder->target->emitTraceMessage(builder, "Control: packet processing finished, pass=%d",
+                                      1, control->accept->name.name.c_str());
 }
 
 }  // namespace EBPF

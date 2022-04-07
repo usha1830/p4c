@@ -991,6 +991,7 @@ TEST_F(P4Runtime, PSADigests) {
     )"), CompilerOptions::FrontendVersion::P4_16, "psa");
 
     ASSERT_TRUE(test);
+    // 0 warnings
     EXPECT_EQ(0u, ::diagnosticCount());
     const auto &typeInfo = test->p4Info->type_info();
 

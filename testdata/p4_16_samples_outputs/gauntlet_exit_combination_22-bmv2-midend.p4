@@ -27,7 +27,7 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
     @name("ingress.tmp") bit<16> tmp;
     @name("ingress.tmp_0") bool tmp_0;
     @name("ingress.tmp_1") bit<16> tmp_1;
-    @noWarn("unused") @name(".NoAction") action NoAction_0() {
+    @noWarn("unused") @name(".NoAction") action NoAction_1() {
     }
     @name("ingress.exit_action") action exit_action() {
         hasExited = true;
@@ -38,9 +38,9 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
         }
         actions = {
             exit_action();
-            @defaultonly NoAction_0();
+            @defaultonly NoAction_1();
         }
-        default_action = NoAction_0();
+        default_action = NoAction_1();
     }
     @hidden action act() {
         tmp_0 = true;
@@ -123,7 +123,9 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
             } else {
                 tbl_act_1.apply();
             }
-            if (!hasExited) {
+            if (hasExited) {
+                ;
+            } else {
                 if (tmp_0) {
                     tbl_gauntlet_exit_combination_22bmv2l40.apply();
                 } else {
@@ -134,7 +136,9 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
         } else {
             tbl_gauntlet_exit_combination_22bmv2l40_2.apply();
         }
-        if (!hasExited) {
+        if (hasExited) {
+            ;
+        } else {
             tbl_gauntlet_exit_combination_22bmv2l40_3.apply();
         }
     }

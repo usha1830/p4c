@@ -24,25 +24,12 @@ parser p(packet_in pkt, out Headers hdr, inout Meta m, inout standard_metadata_t
 
 control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
     ethernet_t val1_eth_hdr;
-    @name("ingress.dst") bit<48> dst;
-    @name("ingress.type") bit<16> type_1;
-    @name("ingress.c") bool c_0;
-    @name("ingress.c1") bool c1_0;
     @name("ingress.simple_action") action simple_action() {
-        h.eth_hdr.src_addr = (h.eth_hdr.eth_type != 16w1 ? 48w1 : h.eth_hdr.src_addr);
-        val1_eth_hdr = (h.eth_hdr.eth_type != 16w1 ? h.eth_hdr : val1_eth_hdr);
-        dst = (h.eth_hdr.eth_type != 16w1 ? val1_eth_hdr.dst_addr : dst);
-        type_1 = (h.eth_hdr.eth_type != 16w1 ? val1_eth_hdr.eth_type : type_1);
-        c_0 = (h.eth_hdr.eth_type != 16w1 ? true : c_0);
-        c1_0 = (h.eth_hdr.eth_type != 16w1 ? false : c1_0);
-        type_1 = type_1;
-        dst = (h.eth_hdr.eth_type != 16w1 ? (c_0 ? (c1_0 ? 48w1 : dst) : dst) : dst);
-        dst = (h.eth_hdr.eth_type != 16w1 ? (c_0 ? (c1_0 ? dst : 48w2) : dst) : dst);
-        type_1 = (h.eth_hdr.eth_type != 16w1 ? (c_0 ? type_1 : 16w3) : type_1);
-        val1_eth_hdr.dst_addr = (h.eth_hdr.eth_type != 16w1 ? dst : val1_eth_hdr.dst_addr);
-        val1_eth_hdr.eth_type = (h.eth_hdr.eth_type != 16w1 ? type_1 : val1_eth_hdr.eth_type);
-        val1_eth_hdr.dst_addr = (h.eth_hdr.eth_type != 16w1 ? val1_eth_hdr.dst_addr + 48w3 : val1_eth_hdr.dst_addr);
-        h.eth_hdr = (h.eth_hdr.eth_type != 16w1 ? val1_eth_hdr : h.eth_hdr);
+        h.eth_hdr.src_addr = 48w1;
+        val1_eth_hdr = h.eth_hdr;
+        val1_eth_hdr.dst_addr = 48w2;
+        val1_eth_hdr.dst_addr = 48w5;
+        h.eth_hdr = val1_eth_hdr;
     }
     @hidden action issue2345multiple_dependencies60() {
         h.eth_hdr.src_addr = 48w2;

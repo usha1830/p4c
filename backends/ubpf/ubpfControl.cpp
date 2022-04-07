@@ -27,6 +27,7 @@ namespace UBPF {
 
     UBPFControlBodyTranslator::UBPFControlBodyTranslator(
             const UBPFControl *control) :
+            EBPF::CodeGenInspector(control->program->refMap, control->program->typeMap),
             EBPF::ControlBodyTranslator(control), control(control),
             p4lib(P4::P4CoreLibrary::instance) {
         setName("UBPFControlBodyTranslator");
@@ -623,7 +624,7 @@ namespace UBPF {
             auto vd = decl->to<IR::Declaration_Variable>();
             auto etype = UBPFTypeFactory::instance->create(vd->type);
             builder->emitIndent();
-            etype->declare(builder, vd->name, false);
+            etype->declareInit(builder, vd->name, false);
             builder->endOfStatement(true);
             BUG_CHECK(vd->initializer == nullptr,
                       "%1%: declarations with initializers not supported",

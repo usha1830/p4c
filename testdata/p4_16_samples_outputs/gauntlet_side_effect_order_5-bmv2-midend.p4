@@ -16,17 +16,17 @@ struct Meta {
 }
 
 control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
-    @name("ingress.val_2") bit<48> val_2;
+    @name("ingress.val_2") bit<48> val_1;
     @name("ingress.hasReturned") bool hasReturned;
     @hidden action gauntlet_side_effect_order_5bmv2l19() {
-        val_2 = 48w3;
+        val_1 = 48w3;
         hasReturned = true;
     }
     @hidden action gauntlet_side_effect_order_5bmv2l22() {
-        val_2 = 48w12;
+        val_1 = 48w12;
     }
     @hidden action gauntlet_side_effect_order_5bmv2l25() {
-        val_2 = 48w1452;
+        val_1 = 48w1452;
     }
     @hidden action act() {
         hasReturned = false;
@@ -35,7 +35,7 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
         hasReturned = true;
     }
     @hidden action act_0() {
-        h.eth_hdr.src_addr = val_2;
+        h.eth_hdr.src_addr = val_1;
     }
     @hidden table tbl_act {
         actions = {
@@ -81,13 +81,15 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
             } else {
                 tbl_gauntlet_side_effect_order_5bmv2l22.apply();
             }
-            if (!hasReturned) {
-                if (h.eth_hdr.src_addr <= 48w25) {
-                    tbl_gauntlet_side_effect_order_5bmv2l25.apply();
-                }
+            if (hasReturned) {
+                ;
+            } else if (h.eth_hdr.src_addr <= 48w25) {
+                tbl_gauntlet_side_effect_order_5bmv2l25.apply();
             }
         }
-        if (!hasReturned) {
+        if (hasReturned) {
+            ;
+        } else {
             tbl_gauntlet_side_effect_order_5bmv2l28.apply();
         }
         tbl_act_0.apply();

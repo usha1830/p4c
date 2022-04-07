@@ -18,10 +18,10 @@ limitations under the License.
 
 namespace DPDK {
 // The assumption is compiler can only produce forward jumps.
-const IR::Node *RemoveRedundantLabel::postorder(IR::DpdkListStatement *l) {
-    bool changed = false;
+const IR::IndexedVector<IR::DpdkAsmStatement> *RemoveRedundantLabel::removeRedundantLabel(
+                                       const IR::IndexedVector<IR::DpdkAsmStatement> &s) {
     IR::IndexedVector<IR::DpdkAsmStatement> used_labels;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (auto jmp = stmt->to<IR::DpdkJmpStatement>()) {
             bool found = false;
             for (auto label : used_labels) {
@@ -37,7 +37,7 @@ const IR::Node *RemoveRedundantLabel::postorder(IR::DpdkListStatement *l) {
         }
     }
     auto new_l = new IR::IndexedVector<IR::DpdkAsmStatement>;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (auto label = stmt->to<IR::DpdkLabelStatement>()) {
             bool found = false;
             for (auto jmp_label : used_labels) {
@@ -49,57 +49,54 @@ const IR::Node *RemoveRedundantLabel::postorder(IR::DpdkListStatement *l) {
             }
             if (found) {
                 new_l->push_back(stmt);
-            } else {
-                changed = true;
             }
         } else {
             new_l->push_back(stmt);
         }
     }
-    if (changed)
-        l->statements = *new_l;
-    return l;
+    return new_l;
 }
 
-const IR::Node *
-RemoveConsecutiveJmpAndLabel::postorder(IR::DpdkListStatement *l) {
+const IR::IndexedVector<IR::DpdkAsmStatement> *RemoveConsecutiveJmpAndLabel::removeJmpAndLabel(
+                                            const IR::IndexedVector<IR::DpdkAsmStatement> &s) {
     const IR::DpdkJmpStatement *cache = nullptr;
-    bool changed = false;
-    IR::IndexedVector<IR::DpdkAsmStatement> new_l;
-    for (auto stmt : l->statements) {
+    auto new_l = new IR::IndexedVector<IR::DpdkAsmStatement>;
+    for (auto stmt : s) {
         if (auto jmp = stmt->to<IR::DpdkJmpStatement>()) {
             if (cache)
-                new_l.push_back(cache);
+                new_l->push_back(cache);
             cache = jmp;
         } else if (auto label = stmt->to<IR::DpdkLabelStatement>()) {
             if (!cache) {
-                new_l.push_back(stmt);
+                new_l->push_back(stmt);
             } else if (cache->label != label->label) {
-                new_l.push_back(cache);
+                new_l->push_back(cache);
                 cache = nullptr;
-                new_l.push_back(stmt);
+                new_l->push_back(stmt);
             } else {
-                new_l.push_back(stmt);
+                new_l->push_back(stmt);
                 cache = nullptr;
-                changed = true;
             }
         } else {
             if (cache) {
-                new_l.push_back(cache);
+                new_l->push_back(cache);
                 cache = nullptr;
             }
-            new_l.push_back(stmt);
+            new_l->push_back(stmt);
         }
     }
-    if (changed)
-        l->statements = new_l;
-    return l;
+    // Do not remove jump to LABEL_DROP as LABEL_DROP is not part of statement list and
+    // should not be optimized here.
+    if (cache && cache->label == "LABEL_DROP")
+        new_l->push_back(cache);
+    return  new_l;
 }
 
-const IR::Node *ThreadJumps::postorder(IR::DpdkListStatement *l) {
+const IR::IndexedVector<IR::DpdkAsmStatement> *ThreadJumps::threadJumps(
+                     const IR::IndexedVector<IR::DpdkAsmStatement> &s) {
     std::map<const cstring, cstring> label_map;
     const IR::DpdkLabelStatement *cache = nullptr;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (!cache) {
             if (auto label = stmt->to<IR::DpdkLabelStatement>()) {
                 LOG1("label " << label);
@@ -115,7 +112,7 @@ const IR::Node *ThreadJumps::postorder(IR::DpdkListStatement *l) {
         }
     }
     auto new_l = new IR::IndexedVector<IR::DpdkAsmStatement>;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (auto jmp = stmt->to<IR::DpdkJmpStatement>()) {
             auto res = label_map.find(jmp->label);
             if (res != label_map.end()) {
@@ -128,38 +125,35 @@ const IR::Node *ThreadJumps::postorder(IR::DpdkListStatement *l) {
             new_l->push_back(stmt);
         }
     }
-    if (l->statements.size() != new_l->size())
-        l->statements = *new_l;
-    return l;
+    return new_l;
 }
 
-const IR::Node *RemoveLabelAfterLabel::postorder(IR::DpdkListStatement *l) {
-    bool changed = false;
+
+const IR::IndexedVector<IR::DpdkAsmStatement> *RemoveLabelAfterLabel::removeLabelAfterLabel(
+                                         const IR::IndexedVector<IR::DpdkAsmStatement> &s) {
     std::map<const cstring, cstring> label_map;
     const IR::DpdkLabelStatement *cache = nullptr;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (!cache) {
             if (auto label = stmt->to<IR::DpdkLabelStatement>()) {
-                LOG1("label " << label);
                 cache = label;
             }
         } else {
             if (auto label = stmt->to<IR::DpdkLabelStatement>()) {
-                LOG1("label " << label);
                 label_map.emplace(cache->label, label->label);
             } else {
                 cache = nullptr;
             }
         }
     }
+
     auto new_l = new IR::IndexedVector<IR::DpdkAsmStatement>;
-    for (auto stmt : l->statements) {
+    for (auto stmt : s) {
         if (auto jmp = stmt->to<IR::DpdkJmpStatement>()) {
             auto res = label_map.find(jmp->label);
             if (res != label_map.end()) {
                 ((IR::DpdkJmpStatement *)stmt)->label = res->second;
                 new_l->push_back(stmt);
-                changed = true;
             } else {
                 new_l->push_back(stmt);
             }
@@ -167,9 +161,122 @@ const IR::Node *RemoveLabelAfterLabel::postorder(IR::DpdkListStatement *l) {
             new_l->push_back(stmt);
         }
     }
-    if (changed)
-        l->statements = *new_l;
-    return l;
+    return new_l;
 }
 
+bool RemoveUnusedMetadataFields::isByteSizeField(const IR::Type *field_type) {
+    // DPDK implements bool and error types as bit<8>
+    if (field_type->is<IR::Type_Boolean>() || field_type->is<IR::Type_Error>())
+        return true;
+
+    if (auto t = field_type->to<IR::Type_Name>()) {
+        if (t->path->name != "error")
+            return true;
+    }
+    return false;
+}
+
+const IR::Node* RemoveUnusedMetadataFields::preorder(IR::DpdkAsmProgram *p) {
+    IR::IndexedVector<IR::DpdkStructType> usedStruct;
+    bool isMetadataStruct = false;
+    for (auto st : p->structType) {
+        if (!isMetadataStruct) {
+            for (auto anno : st->annotations->annotations) {
+                if (anno->name == "__metadata__") {
+                    isMetadataStruct = true;
+                    IR::IndexedVector<IR::StructField> usedMetadataFields;
+                    for (auto field : st->fields) {
+                        if (used_fields.count(field->name.name)) {
+                            if (isByteSizeField(field->type)) {
+                                usedMetadataFields.push_back(new IR::StructField(
+                                                      IR::ID(field->name), IR::Type_Bits::get(8)));
+                            } else {
+                                usedMetadataFields.push_back(field);
+                            }
+                        }
+                    }
+                    auto newSt = new IR::DpdkStructType(st->srcInfo, st->name,
+                                                   st->annotations, usedMetadataFields);
+                    usedStruct.push_back(newSt);
+                }
+            }
+            if (!isMetadataStruct) {
+                usedStruct.push_back(st);
+            }
+        } else {
+            usedStruct.push_back(st);
+        }
+    }
+    p->structType = usedStruct;
+    return p;
+}
+
+int ValidateTableKeys::getFieldSizeBits(const IR::Type *field_type) {
+    if (auto t = field_type->to<IR::Type_Bits>()) {
+        return t->width_bits();
+    } else if (field_type->is<IR::Type_Boolean>() ||
+        field_type->is<IR::Type_Error>()) {
+        return 8;
+    } else if (auto t = field_type->to<IR::Type_Name>()) {
+        if (t->path->name == "error") {
+            return 8;
+        } else {
+            return -1;
+        }
+    }
+    return -1;
+}
+
+bool ValidateTableKeys::isMetadataStruct(const IR::Type_Struct *st) {
+    for (auto anno : st->annotations->annotations) {
+        if (anno->name == "__metadata__") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ValidateTableKeys::preorder(const IR::DpdkAsmProgram *p) {
+    const IR::DpdkStructType *metaStruct;
+    for (auto st : p->structType) {
+        if (isMetadataStruct(st)) {
+            metaStruct = st;
+            break;
+        }
+    }
+    for (auto tbl : p->tables) {
+        int min, max, size_max_field = 0;
+        auto keys = tbl->match_keys;
+        if (!keys || keys->keyElements.size() == 0) {
+            return false;
+        }
+        min = max = -1;
+        for (auto key : keys->keyElements) {
+            BUG_CHECK(key->expression->is<IR::Member>(), "Table keys must be a structure field. "
+                                                          "%1% is not a structure field", key);
+            auto keyMem = key->expression->to<IR::Member>();
+            auto type = keyMem->expr->type;
+            if (type->is<IR::Type_Struct>() && isMetadataStruct(type->to<IR::Type_Struct>())) {
+                auto offset = metaStruct->getFieldBitOffset(keyMem->member.name);
+                if (min == -1 || min > offset)
+                    min = offset;
+                if (max == -1 || max < offset) {
+                    max = offset;
+                    auto field_type = key->expression->type;
+                    size_max_field = getFieldSizeBits(field_type);
+                    if (size_max_field == -1) {
+                        BUG("Unexpected type %1%", field_type->node_type_name());
+                        return false;
+                    }
+                 }
+             }
+            if ((max + size_max_field - min) > DPDK_TABLE_MAX_KEY_SIZE) {
+                ::error(ErrorType::ERR_UNSUPPORTED_ON_TARGET, "%1%: All table keys together with"
+                        " holes in the underlying structure should fit in 64 bytes", tbl->name);
+                return false;
+            }
+        }
+    }
+    return false;
+}
 }  // namespace DPDK

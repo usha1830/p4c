@@ -23,10 +23,10 @@ parser p(packet_in pkt, out Headers hdr, inout Meta m, inout standard_metadata_t
 }
 
 control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
-    @noWarn("unused") @name(".NoAction") action NoAction_0() {
-    }
     @name("ingress.tmp") bool tmp;
     @name("ingress.tmp_0") bool tmp_0;
+    @noWarn("unused") @name(".NoAction") action NoAction_1() {
+    }
     @name("ingress.simple_action") action simple_action() {
         h.eth_hdr.dst_addr = 48w2;
     }
@@ -40,16 +40,16 @@ control ingress(inout Headers h, inout Meta m, inout standard_metadata_t sm) {
         actions = {
             simple_action();
             exit_action();
-            @defaultonly NoAction_0();
+            @defaultonly NoAction_1();
         }
-        default_action = NoAction_0();
+        default_action = NoAction_1();
     }
     apply {
         tmp = simple_table_0.apply().hit;
-        if (!tmp) {
-            tmp_0 = false;
-        } else {
+        if (tmp) {
             tmp_0 = h.eth_hdr.src_addr == h.eth_hdr.dst_addr;
+        } else {
+            tmp_0 = false;
         }
         if (tmp_0) {
             h.eth_hdr.src_addr = 48w2;
