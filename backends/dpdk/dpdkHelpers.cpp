@@ -117,10 +117,20 @@ bool ConvertStatementToDpdk::preorder(const IR::AssignmentStatement *a) {
     if (auto r = right->to<IR::Operation_Relation>()) {
         process_relation_operation(left, r);
     } else if (auto r = right->to<IR::Operation_Binary>()) {
+        auto src1Op = r->left;
+        if (r->left->is<IR::Constant>()) {
+            // Move constant param to metadata as DPDK expects it to be in metadata
+            BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
+            IR::ID src1(refmap->newName("tmpSrc1"));
+            metadataStruct->fields.push_back(new IR::StructField(src1, r->left->type));
+            auto src1Member = new IR::Member(new IR::PathExpression("m"), src1);
+            add_instr(new IR::DpdkMovStatement(src1Member, r->left));
+            src1Op = src1Member;
+        }
         if (right->is<IR::Add>()) {
             i = new IR::DpdkAddStatement(left, r->left, r->right);
         } else if (right->is<IR::Sub>()) {
-            i = new IR::DpdkSubStatement(left, r->left, r->right);
+            i = new IR::DpdkSubStatement(left, src1Op, r->right);
         } else if (right->is<IR::Shl>()) {
             i = new IR::DpdkShlStatement(left, r->left, r->right);
         } else if (right->is<IR::Shr>()) {
