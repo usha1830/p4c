@@ -22,6 +22,7 @@ limitations under the License.
 #include "xdpHelpProgram.h"
 #include "externs/ebpfPsaCounter.h"
 #include "externs/ebpfPsaHashAlgorithm.h"
+#include "externs/ebpfPsaTableImplementation.h"
 
 namespace EBPF {
 
@@ -343,6 +344,12 @@ void PSAArchTC::emit(CodeBuilder *builder) const {
 void PSAArchTC::emitInstances(CodeBuilder *builder) const {
     builder->appendLine("REGISTER_START()");
 
+    if (options.xdp2tcMode == XDP2TC_CPUMAP) {
+        builder->target->emitTableDecl(builder, "xdp2tc_cpumap",
+                                       TablePerCPUArray, "u32",
+                                       "u16", 1);
+    }
+
     emitPacketReplicationTables(builder);
     emitPipelineInstances(builder);
 
@@ -620,7 +627,10 @@ bool ConvertToEBPFControlPSA::preorder(const IR::ExternBlock* instance) {
     cstring name = EBPFObject::externalName(di);
     cstring typeName = instance->type->getName().name;
 
-    if (typeName == "Counter") {
+    if (typeName == "ActionProfile") {
+        auto ap = new EBPFActionProfilePSA(program, control->codeGen, di);
+        control->tables.emplace(di->name.name, ap);
+    } else if (typeName == "Counter") {
         auto ctr = new EBPFCounterPSA(program, di, name, control->codeGen);
         control->counters.emplace(name, ctr);
     } else {
