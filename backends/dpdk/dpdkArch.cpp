@@ -1115,7 +1115,6 @@ ConvertBinaryOperationTo2Params::postorder(IR::AssignmentStatement *a) {
                                  new IR::Declaration_Variable(tmpOp1->path->name, left->type));
                 code_block.push_back(new IR::AssignmentStatement(tmpOp1, r->left));
                 bin_expr->left = tmpOp1;
-                bin_expr->right = r->right;
                 code_block.push_back(new IR::AssignmentStatement(tmpOp1, bin_expr));
                 code_block.push_back(new IR::AssignmentStatement(left, tmpOp1));
                 return new IR::BlockStatement(code_block);
