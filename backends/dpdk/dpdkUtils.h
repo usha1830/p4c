@@ -19,7 +19,7 @@ limitations under the License.
 #include "ir/ir.h"
 
 namespace DPDK {
-bool isSimpleExpression(const IR::Expression *e); 
+bool isSimpleExpression(const IR::Expression *e);
 bool isNonConstantSimpleExpression(const IR::Expression *e);
 bool isCommutativeBinaryOperation(const IR::Operation_Binary *bin);
 bool isStandardMetadata(cstring name);
