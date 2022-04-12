@@ -25,6 +25,7 @@ limitations under the License.
 
 #include "dpdkArch.h"
 #include "dpdkHelpers.h"
+#include "dpdkUtils.h"
 #include "frontends/p4/coreLibrary.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/externInstance.h"
@@ -32,44 +33,6 @@ limitations under the License.
 #include "frontends/p4/tableApply.h"
 
 namespace DPDK {
-
-bool isSimpleExpression(const IR::Expression *e) {
-    if (e->is<IR::Member>() || e->is<IR::PathExpression>() ||
-        e->is<IR::Constant>() || e->is<IR::BoolLiteral>())
-        return true;
-    return false;
-}
-
-bool isNonConstantSimpleExpression(const IR::Expression *e) {
-    if (e->is<IR::Member>() || e->is<IR::PathExpression>())
-        return true;
-    return false;
-}
-
-bool isCommutativeBinaryOperation(const IR::Operation_Binary *bin) {
-    auto right = bin->right;
-    if (right->is<IR::Add>() || right->is<IR::Equ>() || right->is<IR::LOr>() ||
-        right->is<IR::LAnd>() || right->is<IR::BOr>() || right->is<IR::BAnd>() ||
-        right->is<IR::BXor>())
-        return true;
-    return false;
-}
-
-bool isStandardMetadata(cstring name) {
-    bool isStdMeta = name == "psa_ingress_parser_input_metadata_t" ||
-                     name == "psa_ingress_input_metadata_t" ||
-                     name == "psa_ingress_output_metadata_t" ||
-                     name == "psa_egress_parser_input_metadata_t" ||
-                     name == "psa_egress_input_metadata_t" ||
-                     name == "psa_egress_output_metadata_t" ||
-                     name == "psa_egress_deparser_input_metadata_t" ||
-                     name == "pna_pre_input_metadata_t" ||
-                     name == "pna_pre_output_metadata_t" ||
-                     name == "pna_main_input_metadata_t" ||
-                     name == "pna_main_output_metadata_t" ||
-                     name == "pna_main_parser_input_metadata_t";
-    return isStdMeta;
-}
 
 cstring TypeStruct2Name(const cstring s) {
     if (isStandardMetadata(s)) {
