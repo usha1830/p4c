@@ -42,6 +42,7 @@ class DpdkTable {
     ActionList actions;
     Expression default_action;
     TableProperties properties;
+    inline ParameterList default_action_paraList;
 
     std::ostream& toSpec(std::ostream& out) const;
 #nodbprint
@@ -445,6 +446,11 @@ class DpdkRecircidStatement : DpdkAsmStatement, IDPDKNode {
 }
 
 class DpdkReturnStatement : DpdkAsmStatement, IDPDKNode {
+    std::ostream& toSpec(std::ostream& out) const override;
+#nodbprint
+}
+
+class DpdkRecirculateStatement : DpdkAsmStatement, IDPDKNode {
     std::ostream& toSpec(std::ostream& out) const override;
 #nodbprint
 }
