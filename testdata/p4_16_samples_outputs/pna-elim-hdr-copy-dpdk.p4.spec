@@ -27,8 +27,8 @@ struct main_metadata_t {
 	bit<32> pna_main_input_metadata_input_port
 	bit<32> pna_main_output_metadata_output_port
 	bit<32> MainControlT_tmpDir
-	bit<32> reg_read_tmp
-	bit<32> left_shift_tmp
+	bit<64> reg_read_tmp
+	bit<64> left_shift_tmp
 }
 metadata instanceof main_metadata_t
 
@@ -80,9 +80,13 @@ apply {
 	MAINPARSERIMPL_ACCEPT :	regrd m.reg_read_tmp network_port_mask 0x0
 	mov m.left_shift_tmp 0x1
 	shl m.left_shift_tmp m.pna_main_input_metadata_input_port
-	mov m.pna_main_input_metadata_direction m.reg_read_tmp
-	and m.pna_main_input_metadata_direction m.left_shift_tmp
-	jmpneq LABEL_FALSE 0x0 m.pna_main_input_metadata_direction
+	and m.left_shift_tmp m.reg_read_tmp
+	shr m.left_shift_tmp m.pna_main_input_metadata_input_port
+	jmpeq LABEL_TRUE_1 m.left_shift_tmp 0x0
+	mov m.pna_main_input_metadata_direction 0x0
+	jmp LABEL_END_1
+	LABEL_TRUE_1 :	mov m.pna_main_input_metadata_direction 0x1
+	LABEL_END_1 :	jmpneq LABEL_FALSE 0x0 m.pna_main_input_metadata_direction
 	mov m.MainControlT_tmpDir h.ipv4.srcAddr
 	jmp LABEL_END
 	LABEL_FALSE :	mov m.MainControlT_tmpDir h.ipv4.dstAddr

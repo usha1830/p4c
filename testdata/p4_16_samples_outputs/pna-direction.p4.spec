@@ -31,8 +31,8 @@ struct main_metadata_t {
 	bit<8> local_metadata_b
 	bit<32> pna_main_output_metadata_output_port
 	bit<32> MainControlT_tmpDir
-	bit<32> reg_read_tmp
-	bit<32> left_shift_tmp
+	bit<64> reg_read_tmp
+	bit<64> left_shift_tmp
 }
 metadata instanceof main_metadata_t
 
@@ -73,27 +73,30 @@ apply {
 	MAINPARSERIMPL_ACCEPT :	regrd m.reg_read_tmp network_port_mask 0x0
 	mov m.left_shift_tmp 0x1
 	shl m.left_shift_tmp m.pna_pre_input_metadata_input_port
-	mov m.pna_pre_input_metadata_direction m.reg_read_tmp
-	and m.pna_pre_input_metadata_direction m.left_shift_tmp
-	jmpneq LABEL_TRUE m.pna_pre_input_metadata_direction 0x0
+	and m.left_shift_tmp m.reg_read_tmp
+	shr m.left_shift_tmp m.pna_pre_input_metadata_input_port
+	jmpeq LABEL_TRUE_3 m.left_shift_tmp 0x0
+	mov m.pna_pre_input_metadata_direction 0x0
+	jmp LABEL_END_3
+	LABEL_TRUE_3 :	mov m.pna_pre_input_metadata_direction 0x1
+	LABEL_END_3 :	jmpneq LABEL_TRUE m.pna_pre_input_metadata_direction 0x0
 	mov m.local_metadata_b 0x0
 	jmp LABEL_END
 	LABEL_TRUE :	mov m.local_metadata_b 0x1
-	LABEL_END :	regrd m.reg_read_tmp network_port_mask 0x0
-	mov m.left_shift_tmp 0x1
-	shl m.left_shift_tmp m.pna_pre_input_metadata_input_port
-	mov m.pna_pre_input_metadata_direction m.reg_read_tmp
-	and m.pna_pre_input_metadata_direction m.left_shift_tmp
-	jmpneq LABEL_FALSE_0 0x0 m.pna_pre_input_metadata_direction
+	LABEL_END :	jmpneq LABEL_FALSE_0 0x0 m.pna_pre_input_metadata_direction
 	mov m.local_metadata_tmpDir h.ipv4.srcAddr
 	jmp LABEL_END_0
 	LABEL_FALSE_0 :	mov m.local_metadata_tmpDir h.ipv4.dstAddr
 	LABEL_END_0 :	regrd m.reg_read_tmp network_port_mask 0x0
 	mov m.left_shift_tmp 0x1
 	shl m.left_shift_tmp m.pna_main_input_metadata_input_port
-	mov m.pna_main_input_metadata_direction m.reg_read_tmp
-	and m.pna_main_input_metadata_direction m.left_shift_tmp
-	jmpneq LABEL_FALSE_1 0x0 m.pna_main_input_metadata_direction
+	and m.left_shift_tmp m.reg_read_tmp
+	shr m.left_shift_tmp m.pna_main_input_metadata_input_port
+	jmpeq LABEL_TRUE_4 m.left_shift_tmp 0x0
+	mov m.pna_main_input_metadata_direction 0x0
+	jmp LABEL_END_4
+	LABEL_TRUE_4 :	mov m.pna_main_input_metadata_direction 0x1
+	LABEL_END_4 :	jmpneq LABEL_FALSE_1 0x0 m.pna_main_input_metadata_direction
 	mov m.MainControlT_tmpDir h.ipv4.srcAddr
 	jmp LABEL_END_1
 	LABEL_FALSE_1 :	mov m.MainControlT_tmpDir h.ipv4.dstAddr

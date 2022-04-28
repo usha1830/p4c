@@ -33,7 +33,6 @@ const IR::Node* AddNewMetadataFields::preorder(IR::DpdkStructType *st) {
 
 // make sure new decls and fields name are unique
 void DirectionToRegRead::uniqueNames(IR::DpdkAsmProgram *p) {
-    P4::MinimalNameGenerator mng;
     for (auto st : p->structType) {
         if (isMetadataStruct(st)) {
             for (auto field : st->fields)
@@ -57,9 +56,15 @@ void DirectionToRegRead::uniqueNames(IR::DpdkAsmProgram *p) {
 
 const IR::Node* DirectionToRegRead::preorder(IR::DpdkAsmProgram *p) {
     uniqueNames(p);
-    addMetadataField(reg_read_tmp);
-    addMetadataField(left_shift_tmp);
+    addMetadataField(reg_read_tmp, IR::Type::Bits::get(64));
+    addMetadataField(left_shift_tmp, IR::Type::Bits::get(64));
     p->externDeclarations.push_back(addRegDeclInstance(registerInstanceName));
+    IR::IndexedVector<IR::DpdkAsmStatement> stmts;
+    for (auto stmt : p->statements) {
+        auto stmtList = stmt->to<IR::DpdkListStatement>()->clone();
+        stmts.push_back(replaceDirection(stmtList));
+    }
+    p->statements = stmts;
     return p;
 }
 
@@ -67,7 +72,7 @@ const IR::Node* DirectionToRegRead::preorder(IR::DpdkAsmProgram *p) {
 IR::DpdkExternDeclaration* DirectionToRegRead::addRegDeclInstance(cstring instanceName) {
     auto typepath = new IR::Path("Register");
     auto type = new IR::Type_Name(typepath);
-    auto typeargs = new IR::Vector<IR::Type>({IR::Type::Bits::get(32),
+    auto typeargs = new IR::Vector<IR::Type>({IR::Type::Bits::get(64),
                                               IR::Type::Bits::get(32)});
     auto spectype = new IR::Type_Specialized(type, typeargs);
     auto args = new IR::Vector<IR::Argument>();
@@ -81,9 +86,9 @@ IR::DpdkExternDeclaration* DirectionToRegRead::addRegDeclInstance(cstring instan
 }
 
 // add new fields in metadata structure
-void DirectionToRegRead::addMetadataField(cstring fieldName) {
+void DirectionToRegRead::addMetadataField(cstring fieldName, const IR::Type* type) {
     newMetadataFields.push_back(new IR::StructField(IR::ID(fieldName),
-                                 IR::Type::Bits::get(32)));
+                                type));
 }
 
 // check member expression using metadata direction field
@@ -95,21 +100,35 @@ bool DirectionToRegRead::isDirection(const IR::Member *m) {
          || m->member.name == "pna_main_parser_input_metadata_direction";
 }
 
-const IR::Node *DirectionToRegRead::postorder(IR::DpdkListStatement *l) {
+IR::DpdkListStatement* DirectionToRegRead::replaceDirection(IR::DpdkListStatement *l) {
+    // collect used labels name for generating new unique labels
+    for (auto stmt : l->statements) {
+        if (auto ls = stmt->to<IR::DpdkLabelStatement>())
+            mng.usedName(ls->label);
+    }
     l->statements = replaceDirectionWithRegRead(l->statements);
     newStmts.clear();
     return l;
 }
 
 const IR::Node *DirectionToRegRead::postorder(IR::DpdkAction *a) {
+    // collect used labels name for generating new unique labels
+    for (auto stmt : a->statements) {
+        if (auto ls = stmt->to<IR::DpdkLabelStatement>())
+            mng.usedName(ls->label);
+    }
     a->statements = replaceDirectionWithRegRead(a->statements);
     newStmts.clear();
     return a;
 }
 
 // replace direction field uses with register read i.e.
-// istd.direction -> (direction_port_mask.read(0) & (32w0x1 << istd.input_port))
+// istd.direction =
+// (!(((direction_port_mask.read(0) & (32w0x1 << istd.input_port)) >> istd.input_port))) == 0
+// ? NET_TO_HOST : HOST_TO_NET
 void DirectionToRegRead::replaceDirection(const IR::Member *m) {
+    if (isInitialized[m->member.name])
+        return;
     auto reade = new IR::Member(new IR::PathExpression(IR::ID("m")),
                                 IR::ID(reg_read_tmp));
     auto reads = new IR::DpdkRegisterReadStatement(reade, registerInstanceName,
@@ -117,17 +136,33 @@ void DirectionToRegRead::replaceDirection(const IR::Member *m) {
                                                    0));
     auto shld = new IR::Member(new IR::PathExpression(IR::ID("m")),
                                IR::ID(left_shift_tmp));
-    auto mov = new IR::DpdkMovStatement(shld, new IR::Constant(IR::Type::Bits::get(32), 1));
-    auto shl = new IR::DpdkShlStatement(shld, shld,
-               new IR::Member(new IR::PathExpression(IR::ID("m")),
-                              IR::ID(dirToInput[m->member.name])));
-    auto mov1 = new IR::DpdkMovStatement(m, reade);
-    auto and0 = new IR::DpdkAndStatement(m, m, shld);
+    auto mov = new IR::DpdkMovStatement(shld, new IR::Constant(IR::Type::Bits::get(64), 1));
+    auto inputPort = new IR::Member(new IR::PathExpression(IR::ID("m")),
+                                          IR::ID(dirToInput[m->member.name]));
+    auto shl = new IR::DpdkShlStatement(shld, shld, inputPort);
+    auto and0 = new IR::DpdkAndStatement(shld, shld, reade);
+    auto shr0 = new IR::DpdkShrStatement(shld, shld, inputPort);
+    auto label_true = mng.newName("LABEL_TRUE");
+    auto label_end = mng.newName("LABEL_END");
+    auto cmp = new IR::DpdkJmpEqualStatement(label_true, shld,
+                                            new IR::Constant(IR::Type::Bits::get(64), 0));
+    auto mov0 = new IR::DpdkMovStatement(m, new IR::Constant(IR::Type::Bits::get(32), 0));
+    auto jmp = new IR::DpdkJmpLabelStatement(label_end);
+    auto label1 = new IR::DpdkLabelStatement(label_true);
+    auto mov1 = new IR::DpdkMovStatement(m, new IR::Constant(IR::Type::Bits::get(32), 1));
+    auto label2 = new IR::DpdkLabelStatement(label_end);
     newStmts.push_back(reads);
     newStmts.push_back(mov);
     newStmts.push_back(shl);
-    newStmts.push_back(mov1);
     newStmts.push_back(and0);
+    newStmts.push_back(shr0);
+    newStmts.push_back(cmp);
+    newStmts.push_back(mov0);
+    newStmts.push_back(jmp);
+    newStmts.push_back(label1);
+    newStmts.push_back(mov1);
+    newStmts.push_back(label2);
+    isInitialized[m->member.name] = true;
 }
 
 IR::IndexedVector<IR::DpdkAsmStatement>
