@@ -35,12 +35,16 @@ class AddNewMetadataFields : public Transform {
 // This pass adds decl instance of Register extern in dpdk pna program which will
 // be used by dpdk backend for initializing the mask for calculating packet direction
 // and all the use point of istd.direction will follow below calculation and assignment
-// istd.direction = network_port_mask.read(0) & (32w0x1 << istd.input_port)
+// istd.direction =
+// (!(((direction_port_mask.read(0) & (32w0x1 << istd.input_port)) >> istd.input_port))) == 0
+//  ?NET_TO_HOST : HOST_TO_NET
 class DirectionToRegRead : public Transform {
     ordered_map<cstring, cstring> dirToInput;
+    ordered_map<cstring, bool> isInitialized;
     IR::IndexedVector<IR::DpdkAsmStatement> newStmts;
     IR::IndexedVector<IR::StructField> &newMetadataFields = AddNewMetadataFields::newMetadataFields;
     ordered_set<cstring> usedNames;
+    P4::MinimalNameGenerator mng;
     cstring reg_read_tmp;
     cstring left_shift_tmp;
     cstring registerInstanceName;
@@ -54,16 +58,21 @@ class DirectionToRegRead : public Transform {
                                      cstring("pna_pre_input_metadata_input_port")));
     dirToInput.insert(std::make_pair(cstring("pna_main_parser_input_metadata_direction"),
                                      cstring("pna_main_parser_input_metadata_input_port")));
+    isInitialized.insert(std::make_pair(cstring("pna_main_input_metadata_direction"), false));
+    isInitialized.insert(std::make_pair(cstring("pna_pre_input_metadata_direction"), false));
+    isInitialized.insert(std::make_pair(cstring("pna_main_parser_input_metadata_direction"),
+                                        false));
     }
     void uniqueNames(IR::DpdkAsmProgram *p);
+    void collectUsedLables(IR::DpdkListStatement *l);
     const IR::Node* preorder(IR::DpdkAsmProgram *p) override;
 
     IR::DpdkExternDeclaration*
     addRegDeclInstance(cstring instanceName);
-    void addMetadataField(cstring fieldName);
+    void addMetadataField(cstring fieldName, const IR::Type *type);
     bool isDirection(const IR::Member *m);
-    const IR::Node *postorder(IR::DpdkAction *a);
-    const IR::Node *postorder(IR::DpdkListStatement *l) override;
+    IR::DpdkListStatement* replaceDirection(IR::DpdkListStatement *l);
+    const IR::Node *postorder(IR::DpdkAction *l) override;
     void replaceDirection(const IR::Member *m);
     IR::IndexedVector<IR::DpdkAsmStatement>
     replaceDirectionWithRegRead(IR::IndexedVector<IR::DpdkAsmStatement> stmts);
