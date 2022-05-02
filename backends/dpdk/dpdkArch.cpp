@@ -2231,9 +2231,7 @@ void CollectAddOnMissTable::postorder(const IR::P4Table* t) {
     }
     if (use_add_on_miss) {
         for (auto action : t->getActionList()->actionList) {
-             auto action_decl = refMap->getDeclaration(action->getPath())->to<IR::P4Action>();
-             auto actName = refMap->getDeclaration(action->getPath(), true)->getName();
-
+            auto action_decl = refMap->getDeclaration(action->getPath())->to<IR::P4Action>();
             structure->learner_action_table.emplace(action_decl->externalName(), t);
         }
     }
