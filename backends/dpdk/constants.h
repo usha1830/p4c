@@ -23,6 +23,10 @@ const unsigned action_handle_prefix = 0x00020000;
 
 // Default values
 const unsigned dpdk_default_table_size = 65536;
+#define EXPIRE_TIME_PROFILE_TCP_NOW 0;
+#define EXPIRE_TIME_PROFILE_TCP_NEW 30;
+#define EXPIRE_TIME_PROFILE_TCP_ESTABLISHED 86400;
+#define EXPIRE_TIME_PROFILE_TCP_NEVER 0xffffffff;
 #define DPDK_MAX_SHIFT_AMOUNT 64
 
 // Maximum values

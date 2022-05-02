@@ -72,7 +72,7 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         new CollectTableInfo(&structure),
         new CollectAddOnMissTable(refMap, typeMap, &structure),
         new ValidateAddOnMissExterns(refMap, typeMap, &structure),
-	new P4::MoveDeclarations(),  // Move all local declarations to the beginning
+        new P4::MoveDeclarations(),  // Move all local declarations to the beginning
         new CollectProgramStructure(refMap, typeMap, &structure),
         new CollectMetadataHeaderInfo(&structure),
         new ConvertLookahead(refMap, typeMap, &structure),

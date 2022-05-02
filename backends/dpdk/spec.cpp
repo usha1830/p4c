@@ -2,6 +2,7 @@
 #include "ir/dbprint.h"
 #include "printUtils.h"
 #include "dpdkAsmOpt.h"
+#include "constants.h"
 using namespace DBPrint;
 
 static constexpr unsigned DEFAULT_LEARNER_TABLE_SIZE = 0x10000;
@@ -221,8 +222,8 @@ std::ostream &IR::DpdkMirrorStatement::toSpec(std::ostream &out) const {
 
 std::ostream &IR::DpdkLearnStatement::toSpec(std::ostream &out) const {
     out << "learn " << action << " ";
-    if (argument)  
-	out << DPDK::toStr(argument) << " ";
+    if (argument)
+        out << DPDK::toStr(argument) << " ";
     out << DPDK::toStr(timeout);
     return out;
 }
@@ -307,7 +308,7 @@ std::ostream &IR::DpdkReturnStatement::toSpec(std::ostream &out) const {
 std::ostream &IR::DpdkRearmStatement::toSpec(std::ostream &out) const {
     out << "rearm";
     if (timeout)
-	out << " " << DPDK::toStr(timeout);
+        out << " " << DPDK::toStr(timeout);
     return out;
 }
 
@@ -451,14 +452,16 @@ std::ostream& IR::DpdkLearner::toSpec(std::ostream& out) const {
     } else {
         out << "\tsize " << DEFAULT_LEARNER_TABLE_SIZE << std::endl;
     }
-/*    if (auto size = properties->getProperty("psa_idle_timeout")) {
-        out << "\ttimeout " << DPDK::toStr(size->value) << "" << std::endl;
-    } else {
-        out << "\ttimeout " << DEFAULT_LEARNER_TABLE_TIMEOUT << std::endl;
-    }
-*/
-    out << "\ttimeout {\n\t\t60\n\t\t120\n\t\t180\n\t}" << std::endl;
-    out << "}" << std::endl;
+
+    // The timeout values are currently hardcoded here
+    // FIXME: This should come from P4 program but currently we don't have a way 
+    // to specify these in the P4 program.
+    out << "\ttimeout {" << std::endl;
+    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NOW << std::endl;
+    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NEW << std::endl;
+    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_ESTABLISHED << std::endl;
+    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NEVER << "\n\t\t}";
+    out << "\n}" << std::endl;
     return out;
 }
 

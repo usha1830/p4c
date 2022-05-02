@@ -61,16 +61,16 @@ void DpdkContextGenerator::CollectTablesAndSetAttributes() {
                 if (add_on_miss != nullptr) {
                     if (add_on_miss->value->is<IR::ExpressionValue>()) {
                         auto expr = add_on_miss->value->to<IR::ExpressionValue>()->expression;
-	                if (!expr->is<IR::BoolLiteral>()) {
-	                    ::error(ErrorType::ERR_UNEXPECTED,
-	                           "%1%: expected boolean for 'add_on_miss' property", add_on_miss);
-	                    return;
+                        if (!expr->is<IR::BoolLiteral>()) {
+                            ::error(ErrorType::ERR_UNEXPECTED,
+                                   "%1%: expected boolean for 'add_on_miss' property", add_on_miss);
+                            return;
                         } else {
                             tblAttr.is_add_on_miss = expr->to<IR::BoolLiteral>()->value;
                         }
                     }
                 }
-                
+
                 if (hidden) {
                     tblAttr.tableType = selector ? "selection" : "action";
                     tblAttr.isHidden = true;
@@ -252,11 +252,11 @@ DpdkContextGenerator::addMatchAttributes(const IR::P4Table* table, const cstring
         if (attr.params) {
             int index = 0;
             int position = 0;
-	    int param_width = 8; // Minimum width for dpdk action params
+            int param_width = 8;   // Minimum width for dpdk action params
             for (auto param : *(attr.params)) {
                 if (param->type->is<IR::Type_Bits>()) {
-                    param_width = param->type->width_bits();	   
-		} else if (!param->type->is<IR::Type_Boolean>()) {
+                    param_width = param->type->width_bits();
+                } else if (!param->type->is<IR::Type_Boolean>()) {
                     BUG("Unsupported parameter type %1%", param->type);
                 }
                 addImmediateField(immFldArray, param->name.originalName,
@@ -313,15 +313,15 @@ const IR::P4Table * table, const cstring controlName, bool isMatch) {
            if (attr.params) {
                 int index = 0;
                 int position = 0;
-		int param_width = 8;
+                int param_width = 8;
                 for (auto param : *(attr.params)) {
                     if (param->type->is<IR::Type_Bits>()) {
-                        param_width = param->type->width_bits();	   
+                        param_width = param->type->width_bits();
                     } else if (!param->type->is<IR::Type_Boolean>()) {
                         BUG("Unsupported parameter type %1%", param->type);
                     }
                     addActionParam(paramJson, param->name.originalName,
-		                   param_width, position, index/8);
+                                   param_width, position, index/8);
                     index += param_width;
                     position++;
                 }

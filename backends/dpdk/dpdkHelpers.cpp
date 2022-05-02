@@ -769,44 +769,44 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
             add_instr(new IR::DpdkLabelStatement(end_label));
         } else if (a->method->name == "add_entry") {
             auto args = a->expr->arguments;
-	    auto argSize = args->size();
-	    bool argsNone = false;
-	    const IR::Expression *timeout_id = nullptr;
-	    if (argSize != 2 && argSize != 3) {
+            auto argSize = args->size();
+            const IR::Expression *timeout_id = nullptr;
+            if (argSize != 2 && argSize != 3) {
                 ::error(ErrorType::ERR_UNEXPECTED, "Unexpected number of arguments for %1%",
                             a->method->name);
                 return false;
-	    }
+            }
             auto action = a->expr->arguments->at(0)->expression;
             auto action_name = action->to<IR::StringLiteral>()->value;
-	    auto param = a->expr->arguments->at(1)->expression;
-	    if (argSize == 3)
-	        timeout_id = a->expr->arguments->at(2)->expression;
+            auto param = a->expr->arguments->at(1)->expression;
+            if (argSize == 3)
+                timeout_id = a->expr->arguments->at(2)->expression;
             if (timeout_id->is<IR::Constant>() ||  argSize == 2) {
-	        // FIXME This code is valid if specification defines timeout as optional param.
+                // FIXME This code is valid if specification defines timeout as optional param.
                 BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
                 IR::ID tmo(refmap->newName("timeout_id"));
-		if (argSize == 3)
+                if (argSize == 3)
                     metadataStruct->fields.push_back(new IR::StructField(tmo, timeout_id->type));
-		else
-                    metadataStruct->fields.push_back(new IR::StructField(tmo, IR::Type_Bits::get(32)));
+                else
+                    metadataStruct->fields.push_back(
+                                    new IR::StructField(tmo, IR::Type_Bits::get(32)));
                 auto timeout = new IR::Member(new IR::PathExpression("m"), tmo);
-		if (argSize == 3)
+                if (argSize == 3)
                     add_instr(new IR::DpdkMovStatement(timeout, timeout_id));
-		else
+                else
                     add_instr(new IR::DpdkMovStatement(timeout, new IR::Constant(0)));
-		timeout_id = timeout;
-	    }
+                timeout_id = timeout;
+            }
             if (param->is<IR::Member>()) {
                 auto argument = param->to<IR::Member>();
                 add_instr(new IR::DpdkLearnStatement(action_name, timeout_id, argument));
             } else if (param->is<IR::StructExpression>()) {
-	        if (param->to<IR::StructExpression>()->components.size() == 0) {
+                if (param->to<IR::StructExpression>()->components.size() == 0) {
                     add_instr(new IR::DpdkLearnStatement(action_name, timeout_id));
-		} else {
+                } else {
                     auto argument = param->to<IR::StructExpression>()->components.at(0)->expression;
                     add_instr(new IR::DpdkLearnStatement(action_name, timeout_id, argument));
-		}
+                }
             } else if (param->is<IR::Constant>()) {
                 // Move constant param to metadata as DPDK expects it to be in metadata
                 BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
@@ -828,7 +828,7 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
                 return false;
             }
             auto timeout = a->expr->arguments->at(0)->expression;
-	    if (timeout->is<IR::Constant>()) {
+            if (timeout->is<IR::Constant>()) {
                 // Move timeout_is to metadata fields as DPDK expects these parameters
                 // to be in metadata
                 BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
