@@ -1,0 +1,9 @@
+{
+  "program_name" : "psa-unicast-or-drop-corrected-bmv2",
+  "build_date" : "Thu Apr 28 10:05:50 2022",
+  "compile_command" : "./p4c-dpdk --dump ./tmpj2_scv4w -o ./tmpj2_scv4w/psa-unicast-or-drop-corrected-bmv2.p4.spec --arch psa --bf-rt-schema ./tmpj2_scv4w/psa-unicast-or-drop-corrected-bmv2.p4.bfrt.json --context ./tmpj2_scv4w/psa-unicast-or-drop-corrected-bmv2.p4.context.json /home/ushagupt/P4C/add_on_miss/p4c/testdata/p4_16_samples/psa-unicast-or-drop-corrected-bmv2.p4",
+  "compiler_version" : "0.1 (SHA: 0a0f0aa4d BUILD: RELEASE)",
+  "schema_version" : "0.1",
+  "target" : "DPDK",
+  "tables" : []
+}

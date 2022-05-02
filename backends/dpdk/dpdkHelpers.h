@@ -176,6 +176,7 @@ class ConvertStatementToDpdk : public Inspector {
     void process_logical_operation(const IR::Expression*, const IR::Operation_Binary*);
     void process_relation_operation(const IR::Expression*, const IR::Operation_Relation*);
     cstring append_parser_name(const IR::P4Parser* p, cstring);
+//    bool checkTblCtxtValid(cstring, const IR::P4Action *);
     void set_parser(const IR::P4Parser* p) { parser = p; }
     bool handleConstSwitch(const IR::SwitchStatement* a);
 };

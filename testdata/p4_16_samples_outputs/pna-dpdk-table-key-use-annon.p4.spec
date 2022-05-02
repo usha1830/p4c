@@ -33,7 +33,9 @@ struct main_metadata_t {
 	bit<32> pna_main_output_metadata_output_port
 	bit<32> MainControlT_tmp
 	bit<32> MainControlT_tmp_0
+	bit<32> timeout_id
 	bit<32> learnArg
+	bit<32> timeout_id_0
 }
 metadata instanceof main_metadata_t
 
@@ -48,8 +50,9 @@ action next_hop args instanceof next_hop_arg_t {
 }
 
 action add_on_miss_action args none {
+	mov m.timeout_id 0x0
 	mov m.learnArg 0x0
-	learn next_hop m.learnArg
+	learn next_hop m.learnArg m.timeout_id
 	return
 }
 
@@ -62,7 +65,8 @@ action next_hop2 args instanceof next_hop2_arg_t {
 action add_on_miss_action2 args none {
 	mov m.MainControlT_tmp 0x0
 	mov m.MainControlT_tmp_0 0x4d2
-	learn next_hop m.MainControlT_tmp
+	mov m.timeout_id_0 0x0
+	learn next_hop m.MainControlT_tmp m.timeout_id_0
 	return
 }
 

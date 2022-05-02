@@ -2229,6 +2229,14 @@ void CollectAddOnMissTable::postorder(const IR::P4Table* t) {
                     default_action);
         }
     }
+    if (use_add_on_miss) {
+        for (auto action : t->getActionList()->actionList) {
+             auto action_decl = refMap->getDeclaration(action->getPath())->to<IR::P4Action>();
+             auto actName = refMap->getDeclaration(action->getPath(), true)->getName();
+
+            structure->learner_action_table.emplace(action_decl->externalName(), t);
+	}
+    }
 }
 
 void CollectAddOnMissTable::postorder(const IR::MethodCallStatement *mcs) {
@@ -2245,11 +2253,76 @@ void CollectAddOnMissTable::postorder(const IR::MethodCallStatement *mcs) {
     BUG_CHECK(ctxt != nullptr, "%1%: add_entry extern can only be used in an action", mcs);
 
     // assuming checking on number of arguments is already performed in frontend.
-    BUG_CHECK(mce->arguments->size() == 2, "%1%: expected two arguments in add_entry extern", mcs);
+    BUG_CHECK(mce->arguments->size() == 2 || mce->arguments->size() == 3, "%1%: expected 2 or 3 arguments in add_entry extern", mcs);
     auto action = mce->arguments->at(0);
     // assuming syntax check is already performed earlier
     auto action_name = action->expression->to<IR::StringLiteral>()->value;
     structure->learner_actions.insert(action_name);
+    return;
+}
+
+void ValidateAddOnMissExterns::postorder(const IR::MethodCallStatement *mcs) {
+    bool isValidExternCall = false;
+    auto mce = mcs->methodCall;
+    auto mi = P4::MethodInstance::resolve(mce, refMap, typeMap);
+    if (!mi->is<P4::ExternFunction>()) {
+        return;
+    }
+    auto func = mi->to<P4::ExternFunction>();
+    auto externFuncName = func->method->name;
+    auto act = findOrigCtxt<IR::P4Action>();
+    BUG_CHECK(act != nullptr, "%1%: %2% extern can only be used in an action", mcs, externFuncName);
+    auto tbl = ::get(structure->learner_action_table,act->externalName());
+    if (externFuncName == "restart_expire_timer" || externFuncName == "set_entry_expire_time") {
+        bool use_idle_timeout_with_auto_delete = false;
+	if (tbl) {
+            auto idle_timeout_with_auto_delete = tbl->properties->getProperty("idle_timeout_with_auto_delete");
+            if (idle_timeout_with_auto_delete != nullptr) {
+                if (idle_timeout_with_auto_delete->value->is<IR::ExpressionValue>()) {
+                    auto expr = idle_timeout_with_auto_delete->value->to<IR::ExpressionValue>()->expression;
+                    if (!expr->is<IR::BoolLiteral>()) {
+                        ::error(ErrorType::ERR_UNEXPECTED,
+                                "%1%: expected boolean for 'idle_timeout_with_auto_delete' property",
+                                idle_timeout_with_auto_delete);
+                        return;
+                     } else {
+                         use_idle_timeout_with_auto_delete = expr->to<IR::BoolLiteral>()->value;
+                         if (use_idle_timeout_with_auto_delete)
+                             isValidExternCall = true;
+                     }
+                }
+            }
+	}
+        if (!isValidExternCall) {
+            ::error(ErrorType::ERR_UNEXPECTED,
+                    "%1% must only be called from within an action with of a table with "
+		    "'idle_timeout_with_auto_delete' property equal to true", externFuncName);
+        }
+    } else if (externFuncName == "add_entry") {
+	if (tbl) {
+            auto add_on_miss = tbl->properties->getProperty("add_on_miss");
+            if (add_on_miss != nullptr) {
+                if (add_on_miss->value->is<IR::ExpressionValue>()) {
+                    auto expr = add_on_miss->value->to<IR::ExpressionValue>()->expression;
+                    if (!expr->is<IR::BoolLiteral>()) {
+                        ::error(ErrorType::ERR_UNEXPECTED,
+                                "%1%: expected boolean for 'add_on_miss' property", add_on_miss);
+                        return;
+                    } else {
+                        auto use_add_on_miss = expr->to<IR::BoolLiteral>()->value;
+                        if (use_add_on_miss){
+                            isValidExternCall = true;
+			}
+                    }
+                }
+            }
+	}
+        if (!isValidExternCall) {
+            ::error(ErrorType::ERR_UNEXPECTED,
+                    "%1% must only be called from within an action with 'add_on_miss'"
+		   " property equal to true", externFuncName);
+        }
+    }
     return;
 }
 

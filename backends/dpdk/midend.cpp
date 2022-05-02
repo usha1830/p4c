@@ -156,7 +156,7 @@ DpdkMidEnd::DpdkMidEnd(CompilerOptions &options,
         if (arch == "pna") {
             return new P4::ValidateTableProperties({"pna_implementation",
                     "pna_direct_counter", "pna_direct_meter", "pna_idle_timeout", "size",
-                    "add_on_miss"});
+                    "add_on_miss", "idle_timeout_with_auto_delete"});
         } else if (arch == "psa") {
             return new P4::ValidateTableProperties({"psa_implementation",
                     "psa_direct_counter", "psa_direct_meter", "psa_idle_timeout", "size"});

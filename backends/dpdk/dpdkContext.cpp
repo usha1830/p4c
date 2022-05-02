@@ -56,6 +56,21 @@ void DpdkContextGenerator::CollectTablesAndSetAttributes() {
                    tblAttr.size = size->asUnsigned();
                 auto hidden = tbl->annotations->getSingle(IR::Annotation::hiddenAnnotation);
                 auto selector = tbl->properties->getProperty("selector");
+                tblAttr.is_add_on_miss = false;
+                auto add_on_miss = tbl->properties->getProperty("add_on_miss");
+                if (add_on_miss != nullptr) {
+                    if (add_on_miss->value->is<IR::ExpressionValue>()) {
+                        auto expr = add_on_miss->value->to<IR::ExpressionValue>()->expression;
+	                if (!expr->is<IR::BoolLiteral>()) {
+	                    ::error(ErrorType::ERR_UNEXPECTED,
+	                           "%1%: expected boolean for 'add_on_miss' property", add_on_miss);
+	                    return;
+                        } else {
+                            tblAttr.is_add_on_miss = expr->to<IR::BoolLiteral>()->value;
+                        }
+                    }
+                }
+                
                 if (hidden) {
                     tblAttr.tableType = selector ? "selection" : "action";
                     tblAttr.isHidden = true;
@@ -213,7 +228,8 @@ Util::JsonArray* paramJson, const cstring name, int dest_start, int dest_width) 
 
 // This functions creates JSON object for match attributes of a table.
 Util::JsonObject*
-DpdkContextGenerator::addMatchAttributes(const IR::P4Table*table, const cstring ctrlName) {
+DpdkContextGenerator::addMatchAttributes(const IR::P4Table* table, const cstring ctrlName) {
+    auto tableAttr = ::get(tableAttrmap, table->name.originalName);
     auto* match_attributes = new Util::JsonObject();
     auto* actFmtArray = new Util::JsonArray();
     auto* stageTblArray = new Util::JsonArray();
@@ -236,22 +252,24 @@ DpdkContextGenerator::addMatchAttributes(const IR::P4Table*table, const cstring 
         if (attr.params) {
             int index = 0;
             int position = 0;
+	    int param_width = 8; // Minimum width for dpdk action params
             for (auto param : *(attr.params)) {
-                // TODO Handle other types of parameters
                 if (param->type->is<IR::Type_Bits>()) {
-                    addImmediateField(immFldArray, param->name.originalName,
-                                      index/8, param->type->width_bits());
-                    index += param->type->width_bits();
-                    position++;
-                } else {
+                    param_width = param->type->width_bits();	   
+		} else if (!param->type->is<IR::Type_Boolean>()) {
                     BUG("Unsupported parameter type %1%", param->type);
                 }
+                addImmediateField(immFldArray, param->name.originalName,
+                                  index/8, param_width);
+                index += param_width;
+                position++;
             }
         }
         oneAction->emplace("immediate_fields",immFldArray);
         actFmtArray->append(oneAction);
     }
     oneStageTbl->emplace("action_format", actFmtArray);
+    oneStageTbl->emplace("add_on_miss", tableAttr.is_add_on_miss);
     stageTblArray->append(oneStageTbl);
     match_attributes->emplace("stage_tables", stageTblArray);
     return match_attributes;
@@ -295,16 +313,17 @@ const IR::P4Table * table, const cstring controlName, bool isMatch) {
            if (attr.params) {
                 int index = 0;
                 int position = 0;
+		int param_width = 8;
                 for (auto param : *(attr.params)) {
-                // TODO Handle other types of parameters
                     if (param->type->is<IR::Type_Bits>()) {
-                        addActionParam(paramJson, param->name.originalName,
-                                       param->type->width_bits(), position, index/8);
-                        position++;
-                        index += param->type->width_bits();
-                    } else {
+                        param_width = param->type->width_bits();	   
+                    } else if (!param->type->is<IR::Type_Boolean>()) {
                         BUG("Unsupported parameter type %1%", param->type);
                     }
+                    addActionParam(paramJson, param->name.originalName,
+		                   param_width, position, index/8);
+                    index += param_width;
+                    position++;
                 }
             }
             act->emplace("p4_parameters", paramJson);

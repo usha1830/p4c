@@ -220,7 +220,10 @@ std::ostream &IR::DpdkMirrorStatement::toSpec(std::ostream &out) const {
 }
 
 std::ostream &IR::DpdkLearnStatement::toSpec(std::ostream &out) const {
-    out << "learn " << action << " " << DPDK::toStr(argument);
+    out << "learn " << action << " ";
+    if (argument)  
+	out << DPDK::toStr(argument) << " ";
+    out << DPDK::toStr(timeout);
     return out;
 }
 
@@ -298,6 +301,13 @@ std::ostream &IR::DpdkExternFuncStatement::toSpec(std::ostream &out) const {
 
 std::ostream &IR::DpdkReturnStatement::toSpec(std::ostream &out) const {
     out << "return ";
+    return out;
+}
+
+std::ostream &IR::DpdkRearmStatement::toSpec(std::ostream &out) const {
+    out << "rearm";
+    if (timeout)
+	out << " " << DPDK::toStr(timeout);
     return out;
 }
 
@@ -441,12 +451,13 @@ std::ostream& IR::DpdkLearner::toSpec(std::ostream& out) const {
     } else {
         out << "\tsize " << DEFAULT_LEARNER_TABLE_SIZE << std::endl;
     }
-    if (auto size = properties->getProperty("psa_idle_timeout")) {
+/*    if (auto size = properties->getProperty("psa_idle_timeout")) {
         out << "\ttimeout " << DPDK::toStr(size->value) << "" << std::endl;
     } else {
         out << "\ttimeout " << DEFAULT_LEARNER_TABLE_TIMEOUT << std::endl;
     }
-
+*/
+    out << "\ttimeout {\n\t\t60\n\t\t120\n\t\t180\n\t}" << std::endl;
     out << "}" << std::endl;
     return out;
 }

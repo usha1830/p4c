@@ -1,0 +1,9 @@
+{
+  "program_name" : "pna-lookahead-structure",
+  "build_date" : "Thu Apr 28 10:06:08 2022",
+  "compile_command" : "./p4c-dpdk --dump ./tmp775t496e -o ./tmp775t496e/pna-lookahead-structure.p4.spec --arch pna --bf-rt-schema ./tmp775t496e/pna-lookahead-structure.p4.bfrt.json --context ./tmp775t496e/pna-lookahead-structure.p4.context.json /home/ushagupt/P4C/add_on_miss/p4c/testdata/p4_16_samples/pna-lookahead-structure.p4",
+  "compiler_version" : "0.1 (SHA: 0a0f0aa4d BUILD: RELEASE)",
+  "schema_version" : "0.1",
+  "target" : "DPDK",
+  "tables" : []
+}
