@@ -453,14 +453,11 @@ std::ostream& IR::DpdkLearner::toSpec(std::ostream& out) const {
         out << "\tsize " << DEFAULT_LEARNER_TABLE_SIZE << std::endl;
     }
 
-    // The timeout values are currently hardcoded here
-    // FIXME: This should come from P4 program but currently we don't have a way
-    // to specify these in the P4 program.
+    // The initial timeout values
     out << "\ttimeout {" << std::endl;
-    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NOW << std::endl;
-    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NEW << std::endl;
-    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_ESTABLISHED << std::endl;
-    out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NEVER << "\n\t\t}";
+    out << "\t\t" << 60 << std::endl;
+    out << "\t\t" << 120 << std::endl;
+    out << "\t\t" << 180 << "\n\t\t}";
     out << "\n}" << std::endl;
     return out;
 }

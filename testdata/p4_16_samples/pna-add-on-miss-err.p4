@@ -65,7 +65,6 @@ const bit<32> NUM_PORTS = 4;
 //////////////////////////////////////////////////////////////////////
 
 struct main_metadata_t {
-    // empty for this skeleton
     ExpireTimeProfileId_t timeout;
 }
 
@@ -154,7 +153,7 @@ control MainControlImpl(
         hdr.ipv4.srcAddr = newAddr;
     }
     action add_on_miss_action2() {
-        add_entry(action_name="next_hop2", action_params = {32w0, 32w1234});
+        add_entry(action_name="next_hop2", action_params = {32w0, 32w1234}, expire_time_profile_id = user_meta.timeout);
     }
     table ipv4_da2 {
         key = {

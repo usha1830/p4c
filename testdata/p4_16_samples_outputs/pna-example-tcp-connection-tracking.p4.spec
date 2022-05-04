@@ -122,10 +122,9 @@ learner ct_tcp_table {
 	default_action ct_tcp_table_miss args none 
 	size 65536
 	timeout {
-		0
-		30
-		86400
-		4294967295
+		60
+		120
+		180
 		}
 }
 
