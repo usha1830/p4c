@@ -70,7 +70,23 @@ void DpdkContextGenerator::CollectTablesAndSetAttributes() {
                         }
                     }
                 }
-
+                auto idle_timeout_with_auto_delete =
+                     tbl->properties->getProperty("idle_timeout_with_auto_delete");
+                if (idle_timeout_with_auto_delete != nullptr) {
+                    if (idle_timeout_with_auto_delete->value->is<IR::ExpressionValue>()) {
+                        auto expr =
+                        idle_timeout_with_auto_delete->value->to<IR::ExpressionValue>()->expression;
+                        if (!expr->is<IR::BoolLiteral>()) {
+                            ::error(ErrorType::ERR_UNEXPECTED,
+                            "%1%: expected boolean for 'idle_timeout_with_auto_delete' property",
+                            idle_timeout_with_auto_delete);
+                            return;
+                         } else {
+                             tblAttr.idle_timeout_with_auto_delete =
+                                      expr->to<IR::BoolLiteral>()->value;
+                         }
+                    }
+                }
                 if (hidden) {
                     tblAttr.tableType = selector ? "selection" : "action";
                     tblAttr.isHidden = true;
@@ -128,6 +144,8 @@ Util::JsonObject* DpdkContextGenerator::initTableCommonJson(
     tableJson->emplace("table_type", attr.tableType);
     tableJson->emplace("size", attr.size);
     tableJson->emplace("p4_hidden", attr.isHidden);
+    tableJson->emplace("add_on_miss", attr.is_add_on_miss);
+    tableJson->emplace("idle_timeout_with_auto_delete",  attr.idle_timeout_with_auto_delete);
     return tableJson;
 }
 
@@ -269,7 +287,6 @@ DpdkContextGenerator::addMatchAttributes(const IR::P4Table* table, const cstring
         actFmtArray->append(oneAction);
     }
     oneStageTbl->emplace("action_format", actFmtArray);
-    oneStageTbl->emplace("add_on_miss", tableAttr.is_add_on_miss);
     stageTblArray->append(oneStageTbl);
     match_attributes->emplace("stage_tables", stageTblArray);
     return match_attributes;

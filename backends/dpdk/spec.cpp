@@ -454,7 +454,7 @@ std::ostream& IR::DpdkLearner::toSpec(std::ostream& out) const {
     }
 
     // The timeout values are currently hardcoded here
-    // FIXME: This should come from P4 program but currently we don't have a way 
+    // FIXME: This should come from P4 program but currently we don't have a way
     // to specify these in the P4 program.
     out << "\ttimeout {" << std::endl;
     out << "\t\t" << EXPIRE_TIME_PROFILE_TCP_NOW << std::endl;

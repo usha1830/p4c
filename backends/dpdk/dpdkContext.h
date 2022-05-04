@@ -44,6 +44,7 @@ struct TableAttributes {
        generated tables when psa_implementation is action_selector or action_profile */
     cstring tableType;
     bool is_add_on_miss;
+    bool idle_timeout_with_auto_delete;
     bool isHidden;
     unsigned size;
     cstring controlName;
