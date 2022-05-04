@@ -770,8 +770,7 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
         } else if (a->method->name == "add_entry") {
             auto args = a->expr->arguments;
             auto argSize = args->size();
-            const IR::Expression *timeout_id = nullptr;
-            if (argSize != 2 && argSize != 3) {
+            if (argSize != 3) {
                 ::error(ErrorType::ERR_UNEXPECTED, "Unexpected number of arguments for %1%",
                             a->method->name);
                 return false;
@@ -779,21 +778,13 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
             auto action = a->expr->arguments->at(0)->expression;
             auto action_name = action->to<IR::StringLiteral>()->value;
             auto param = a->expr->arguments->at(1)->expression;
-            if (argSize == 3)
-                timeout_id = a->expr->arguments->at(2)->expression;
-            if (timeout_id->is<IR::Constant>() ||  argSize == 2) {
-                // FIXME This code is valid if specification defines timeout as optional param.
+            auto timeout_id = a->expr->arguments->at(2)->expression;
+            if (timeout_id->is<IR::Constant>()) {
                 BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
                 IR::ID tmo(refmap->newName("timeout_id"));
                 auto timeout = new IR::Member(new IR::PathExpression("m"), tmo);
-                if (argSize == 3) {
-                    metadataStruct->fields.push_back(new IR::StructField(tmo, timeout_id->type));
-                    add_instr(new IR::DpdkMovStatement(timeout, timeout_id));
-                } else {
-                    metadataStruct->fields.push_back(
-                                    new IR::StructField(tmo, IR::Type_Bits::get(32)));
-                    add_instr(new IR::DpdkMovStatement(timeout, new IR::Constant(0)));
-                }
+                metadataStruct->fields.push_back(new IR::StructField(tmo, timeout_id->type));
+                add_instr(new IR::DpdkMovStatement(timeout, timeout_id));
                 timeout_id = timeout;
             }
             if (param->is<IR::Member>()) {
