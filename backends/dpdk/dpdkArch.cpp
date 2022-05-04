@@ -2314,9 +2314,8 @@ void ValidateAddOnMissExterns::postorder(const IR::MethodCallStatement *mcs) {
                         return;
                     } else {
                         auto use_add_on_miss = expr->to<IR::BoolLiteral>()->value;
-                        if (use_add_on_miss){
+                        if (use_add_on_miss)
                             isValidExternCall = true;
-                        }
                     }
                 }
             }

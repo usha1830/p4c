@@ -785,16 +785,15 @@ bool ConvertStatementToDpdk::preorder(const IR::MethodCallStatement *s) {
                 // FIXME This code is valid if specification defines timeout as optional param.
                 BUG_CHECK(metadataStruct, "Metadata structure missing unexpectedly!");
                 IR::ID tmo(refmap->newName("timeout_id"));
-                if (argSize == 3)
+                auto timeout = new IR::Member(new IR::PathExpression("m"), tmo);
+                if (argSize == 3) {
                     metadataStruct->fields.push_back(new IR::StructField(tmo, timeout_id->type));
-                else
+                    add_instr(new IR::DpdkMovStatement(timeout, timeout_id));
+                } else {
                     metadataStruct->fields.push_back(
                                     new IR::StructField(tmo, IR::Type_Bits::get(32)));
-                auto timeout = new IR::Member(new IR::PathExpression("m"), tmo);
-                if (argSize == 3)
-                    add_instr(new IR::DpdkMovStatement(timeout, timeout_id));
-                else
                     add_instr(new IR::DpdkMovStatement(timeout, new IR::Constant(0)));
+                }
                 timeout_id = timeout;
             }
             if (param->is<IR::Member>()) {
