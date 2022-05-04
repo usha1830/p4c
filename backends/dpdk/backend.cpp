@@ -63,6 +63,7 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         new P4::TypeChecking(refMap, typeMap),
         new BMV2::LowerExpressions(typeMap, DPDK_MAX_SHIFT_AMOUNT),
         new DismantleMuxExpressions(typeMap, refMap),
+        new ElimHeaderCopy(typeMap),
         new P4::RemoveComplexExpressions(refMap, typeMap,
                 new DPDK::ProcessControls(&structure.pipeline_controls)),
         new P4::ConstantFolding(refMap, typeMap, false),
@@ -127,6 +128,7 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         return;
     if (structure.p4arch == "pna") {
         PassManager post_code_gen = {
+            new PrependPassRecircId(),
             new DirectionToRegRead(),
             new AddNewMetadataFields(),
         };
