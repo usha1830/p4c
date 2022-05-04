@@ -76,6 +76,32 @@ class EBPFTablePSADirectCounterPropertyVisitor : public EBPFTablePsaPropertyVisi
     }
 };
 
+class EBPFTablePSADirectMeterPropertyVisitor : public EBPFTablePsaPropertyVisitor {
+ public:
+    explicit EBPFTablePSADirectMeterPropertyVisitor(EBPFTablePSA* table)
+        : EBPFTablePsaPropertyVisitor(table) {}
+
+    bool preorder(const IR::PathExpression* pe) override {
+        auto decl = table->program->refMap->getDeclaration(pe->path, true);
+        auto di = decl->to<IR::Declaration_Instance>();
+        CHECK_NULL(di);
+        if (EBPFObject::getTypeName(di) != "DirectMeter") {
+            ::error(ErrorType::ERR_UNEXPECTED,
+                    "%1%: not a DirectMeter, see declaration of %2%", pe, decl);
+            return false;
+        }
+
+        auto meterName = EBPFObject::externalName(di);
+        auto met = new EBPFMeterPSA(table->program, meterName, di, table->codeGen);
+        table->meters.emplace_back(std::make_pair(meterName, met));
+        return false;
+    }
+
+    void visitTableProperty() {
+        EBPFTablePsaPropertyVisitor::visitTableProperty("psa_direct_meter");
+    }
+};
+
 class EBPFTablePSAImplementationPropertyVisitor : public EBPFTablePsaPropertyVisitor {
  public:
     explicit EBPFTablePSAImplementationPropertyVisitor(EBPFTablePSA* table)
@@ -155,6 +181,15 @@ void ActionTranslationVisitorPSA::processMethod(const P4::ExternMethod* method) 
             ::error(ErrorType::ERR_NOT_FOUND,
                     "%1%: Table %2% does not own DirectCounter named %3%",
                     method->expr, table->table->container, instanceName);
+    } else if (declType->name.name == "DirectMeter") {
+        auto met = table->getMeter(instanceName);
+        if (met != nullptr) {
+            met->emitDirectExecute(builder, method, valueName);
+        } else {
+            ::error(ErrorType::ERR_NOT_FOUND,
+                    "%1%: Table %2% does not own DirectMeter named %3%",
+                    method->expr, table->table->container, instanceName);
+        }
     } else {
         ControlBodyTranslatorPSA::processMethod(method);
     }
@@ -196,6 +231,7 @@ EBPFTablePSA::EBPFTablePSA(const EBPFProgram* program, const IR::TableBlock* tab
     }
 
     initDirectCounters();
+    initDirectMeters();
     initImplementation();
 }
 
@@ -204,6 +240,11 @@ EBPFTablePSA::EBPFTablePSA(const EBPFProgram* program, CodeGenInspector* codeGen
 
 void EBPFTablePSA::initDirectCounters() {
     EBPFTablePSADirectCounterPropertyVisitor visitor(this);
+    visitor.visitTableProperty();
+}
+
+void EBPFTablePSA::initDirectMeters() {
+    EBPFTablePSADirectMeterPropertyVisitor visitor(this);
     visitor.visitTableProperty();
 }
 
@@ -252,8 +293,11 @@ ActionTranslationVisitor* EBPFTablePSA::createActionTranslationVisitor(
 
 void EBPFTablePSA::emitValueStructStructure(CodeBuilder* builder) {
     if (implementation != nullptr) {
-        // TODO: add priority for ternary table
-
+        if (isTernaryTable()) {
+            builder->emitIndent();
+            builder->append("__u32 priority;");
+            builder->newline();
+        }
         implementation->emitReferenceEntry(builder);
     } else {
         EBPFTable::emitValueStructStructure(builder);
@@ -261,32 +305,21 @@ void EBPFTablePSA::emitValueStructStructure(CodeBuilder* builder) {
 }
 
 void EBPFTablePSA::emitInstance(CodeBuilder *builder) {
-    if (keyGenerator != nullptr) {
+    if (isTernaryTable()) {
+        emitTernaryInstance(builder);
+    } else {
         TableKind kind = isLPMTable() ? TableLPMTrie : TableHash;
-        emitTableDecl(builder, instanceName, kind,
+        builder->target->emitTableDecl(builder, instanceName, kind,
                       cstring("struct ") + keyTypeName,
                       cstring("struct ") + valueTypeName, size);
     }
 
     if (implementation == nullptr) {
         // Default action is up to implementation, define it when no implementation provided
-        emitTableDecl(builder, defaultActionMapName, TableArray,
+        builder->target->emitTableDecl(builder, defaultActionMapName, TableArray,
                       program->arrayIndexType,
                       cstring("struct ") + valueTypeName, 1);
     }
-}
-
-void EBPFTablePSA::emitTableDecl(CodeBuilder *builder,
-                                 cstring tblName,
-                                 TableKind kind,
-                                 cstring keyTypeName,
-                                 cstring valueTypeName,
-                                 size_t size) const {
-    builder->target->emitTableDecl(builder,
-                                   tblName, kind,
-                                   keyTypeName,
-                                   valueTypeName,
-                                   size);
 }
 
 void EBPFTablePSA::emitTypes(CodeBuilder* builder) {
@@ -302,7 +335,12 @@ void EBPFTablePSA::emitDirectValueTypes(CodeBuilder* builder) {
     for (auto ctr : counters) {
         ctr.second->emitValueType(builder);
     }
-    // TODO: support for meters
+    for (auto met : meters) {
+        met.second->emitValueType(builder);
+    }
+    if (!meters.empty()) {
+        meters.begin()->second->emitSpinLockField(builder);
+    }
 }
 
 void EBPFTablePSA::emitAction(CodeBuilder* builder, cstring valueName, cstring actionRunVariable) {
@@ -501,11 +539,6 @@ void EBPFTablePSA::emitTableValue(CodeBuilder* builder, const IR::MethodCallExpr
     builder->append("}},\n");
     builder->blockEnd(false);
     builder->endOfStatement(true);
-}
-
-void EBPFTablePSA::emitLookup(CodeBuilder* builder, cstring key, cstring value) {
-    // TODO: placeholder for handling ternary table caching
-    EBPFTable::emitLookup(builder, key, value);
 }
 
 void EBPFTablePSA::emitLookupDefault(CodeBuilder* builder, cstring key, cstring value,

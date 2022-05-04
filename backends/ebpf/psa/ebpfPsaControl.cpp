@@ -46,7 +46,8 @@ bool ControlBodyTranslatorPSA::preorder(const IR::AssignmentStatement* a) {
             // Then the hash value is stored in a registerVar variable.
             hash->calculateHash(builder, ext->expr, this);
             builder->emitIndent();
-        } else if (ext->originalExternType->name.name == "Meter") {
+        } else if (ext->originalExternType->name.name == "Meter" ||
+                   ext->originalExternType->name.name == "DirectMeter") {
             // It is just for trace message before meter execution
             cstring name = EBPFObject::externalName(ext->object);
             auto msgStr = Util::printf_format("Executing meter: %s", name);
@@ -73,6 +74,10 @@ void ControlBodyTranslatorPSA::processMethod(const P4::ExternMethod* method) {
     } else if (declType->name.name == "Hash") {
         auto hash = control->to<EBPFControlPSA>()->getHash(name);
         hash->processMethod(builder, method->method->name.name, method->expr, this);
+        return;
+    } else if (declType->name.name == "Random") {
+        auto rand = control->to<EBPFControlPSA>()->getRandomExt(name);
+        rand->processMethod(builder, method);
         return;
     } else if (declType->name.name == "Register") {
         auto reg = control->to<EBPFControlPSA>()->getRegister(name);
