@@ -18,30 +18,9 @@ limitations under the License.
 #include "dpdkUtils.h"
 
 namespace DPDK {
-const IR::Node* AddNewMetadataFields::preorder(IR::DpdkStructType *st) {
-    if (isMetadataStruct(st)) {
-        for (auto nf : newMetadataFields) {
-                st->fields.push_back(nf);
-        }
-        auto newSt = new IR::DpdkStructType(st->srcInfo, st->name,
-                                          st->annotations, st->fields);
-        newMetadataFields.clear();
-        return newSt;
-    }
-    return st;
-}
 
 // make sure new decls and fields name are unique
 void DirectionToRegRead::uniqueNames(IR::DpdkAsmProgram *p) {
-    for (auto st : p->structType) {
-        if (isMetadataStruct(st)) {
-            for (auto field : st->fields)
-                mng.usedName(field->name);
-        }
-    }
-    reg_read_tmp = mng.newName("reg_read_tmp");
-    left_shift_tmp = mng.newName("left_shift_tmp");
-
     // "direction" name is used in dpdk for initialzing direction port mask
     // make sure no such decls exist with that name
     registerInstanceName = "direction";
@@ -56,8 +35,6 @@ void DirectionToRegRead::uniqueNames(IR::DpdkAsmProgram *p) {
 
 const IR::Node* DirectionToRegRead::preorder(IR::DpdkAsmProgram *p) {
     uniqueNames(p);
-    addMetadataField(reg_read_tmp, IR::Type::Bits::get(64));
-    addMetadataField(left_shift_tmp, IR::Type::Bits::get(64));
     p->externDeclarations.push_back(addRegDeclInstance(registerInstanceName));
     IR::IndexedVector<IR::DpdkAsmStatement> stmts;
     for (auto stmt : p->statements) {
@@ -76,19 +53,13 @@ IR::DpdkExternDeclaration* DirectionToRegRead::addRegDeclInstance(cstring instan
                                               IR::Type::Bits::get(32)});
     auto spectype = new IR::Type_Specialized(type, typeargs);
     auto args = new IR::Vector<IR::Argument>();
-    args->push_back(new IR::Argument(new IR::Constant(IR::Type::Bits::get(32), 1)));
+    args->push_back(new IR::Argument(new IR::Constant(IR::Type::Bits::get(32), 256)));
     auto annot = IR::Annotations::empty;
     annot->addAnnotationIfNew(IR::Annotation::nameAnnotation,
                               new IR::StringLiteral(instanceName));
     auto decl = new IR::DpdkExternDeclaration(instanceName, annot, spectype, args,
                     nullptr);
     return decl;
-}
-
-// add new fields in metadata structure
-void DirectionToRegRead::addMetadataField(cstring fieldName, const IR::Type* type) {
-    newMetadataFields.push_back(new IR::StructField(IR::ID(fieldName),
-                                type));
 }
 
 // check member expression using metadata direction field
@@ -101,22 +72,12 @@ bool DirectionToRegRead::isDirection(const IR::Member *m) {
 }
 
 IR::DpdkListStatement* DirectionToRegRead::replaceDirection(IR::DpdkListStatement *l) {
-    // collect used labels name for generating new unique labels
-    for (auto stmt : l->statements) {
-        if (auto ls = stmt->to<IR::DpdkLabelStatement>())
-            mng.usedName(ls->label);
-    }
     l->statements = replaceDirectionWithRegRead(l->statements);
     newStmts.clear();
     return l;
 }
 
 const IR::Node *DirectionToRegRead::postorder(IR::DpdkAction *a) {
-    // collect used labels name for generating new unique labels
-    for (auto stmt : a->statements) {
-        if (auto ls = stmt->to<IR::DpdkLabelStatement>())
-            mng.usedName(ls->label);
-    }
     a->statements = replaceDirectionWithRegRead(a->statements);
     newStmts.clear();
     return a;
@@ -152,7 +113,6 @@ DirectionToRegRead::replaceDirectionWithRegRead(IR::IndexedVector<IR::DpdkAsmSta
     return newStmts;
 }
 
-IR::IndexedVector<IR::StructField> AddNewMetadataFields::newMetadataFields = {};
 
 // check member expression using metadata pass field
 // "recircid" instruction takes the pass metadata type as argument to fetch the pass_id.

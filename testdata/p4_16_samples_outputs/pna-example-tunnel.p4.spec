@@ -46,7 +46,7 @@ struct local_metadata_t {
 }
 metadata instanceof local_metadata_t
 
-regarray direction size 0x1 initval 0
+regarray direction size 0x100 initval 0
 
 action NoAction args none {
 	return
