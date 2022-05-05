@@ -64,7 +64,7 @@ control MainControlImpl(inout headers_t hdr, inout main_metadata_t user_meta, in
     }
     action add_on_miss_action() {
         bit<32> tmp = 32w0;
-        add_entry<bit<32>>(action_name = "next_hop", action_params = tmp);
+        add_entry<bit<32>>(action_name = "next_hop", action_params = tmp, expire_time_profile_id = user_meta.timeout);
     }
     table ipv4_da {
         key = {

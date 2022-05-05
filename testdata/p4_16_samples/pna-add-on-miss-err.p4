@@ -135,7 +135,7 @@ control MainControlImpl(
     }
     action add_on_miss_action() {
         bit<32> tmp = 0;
-        add_entry(action_name="next_hop", action_params = tmp);
+        add_entry(action_name="next_hop", action_params = tmp, expire_time_profile_id = user_meta.timeout);
     }
     table ipv4_da {
         key = {
