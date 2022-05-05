@@ -42,9 +42,9 @@ void DirectionToRegRead::uniqueNames(IR::DpdkAsmProgram *p) {
     reg_read_tmp = mng.newName("reg_read_tmp");
     left_shift_tmp = mng.newName("left_shift_tmp");
 
-    // "network_port_mask" name is used in dpdk for initialzing direction port mask
+    // "direction" name is used in dpdk for initialzing direction port mask
     // make sure no such decls exist with that name
-    registerInstanceName = "network_port_mask";
+    registerInstanceName = "direction";
     for (auto decl : p->externDeclarations) {
         usedNames.insert(decl->name);
     }
@@ -123,45 +123,15 @@ const IR::Node *DirectionToRegRead::postorder(IR::DpdkAction *a) {
 }
 
 // replace direction field uses with register read i.e.
-// istd.direction =
-// (!(((direction_port_mask.read(0) & (32w0x1 << istd.input_port)) >> istd.input_port))) == 0
-// ? NET_TO_HOST : HOST_TO_NET
+// istd.direction = direction.read(istd.input_port)
 void DirectionToRegRead::replaceDirection(const IR::Member *m) {
     if (isInitialized[m->member.name])
         return;
-    auto reade = new IR::Member(new IR::PathExpression(IR::ID("m")),
-                                IR::ID(reg_read_tmp));
-    auto reads = new IR::DpdkRegisterReadStatement(reade, registerInstanceName,
-                                                   new IR::Constant(IR::Type::Bits::get(32),
-                                                   0));
-    auto shld = new IR::Member(new IR::PathExpression(IR::ID("m")),
-                               IR::ID(left_shift_tmp));
-    auto mov = new IR::DpdkMovStatement(shld, new IR::Constant(IR::Type::Bits::get(64), 1));
     auto inputPort = new IR::Member(new IR::PathExpression(IR::ID("m")),
-                                          IR::ID(dirToInput[m->member.name]));
-    auto shl = new IR::DpdkShlStatement(shld, shld, inputPort);
-    auto and0 = new IR::DpdkAndStatement(shld, shld, reade);
-    auto shr0 = new IR::DpdkShrStatement(shld, shld, inputPort);
-    auto label_true = mng.newName("LABEL_TRUE");
-    auto label_end = mng.newName("LABEL_END");
-    auto cmp = new IR::DpdkJmpEqualStatement(label_true, shld,
-                                            new IR::Constant(IR::Type::Bits::get(64), 0));
-    auto mov0 = new IR::DpdkMovStatement(m, new IR::Constant(IR::Type::Bits::get(32), 0));
-    auto jmp = new IR::DpdkJmpLabelStatement(label_end);
-    auto label1 = new IR::DpdkLabelStatement(label_true);
-    auto mov1 = new IR::DpdkMovStatement(m, new IR::Constant(IR::Type::Bits::get(32), 1));
-    auto label2 = new IR::DpdkLabelStatement(label_end);
+                                    IR::ID(dirToInput[m->member.name]));
+
+    auto reads = new IR::DpdkRegisterReadStatement(m, registerInstanceName, inputPort);
     newStmts.push_back(reads);
-    newStmts.push_back(mov);
-    newStmts.push_back(shl);
-    newStmts.push_back(and0);
-    newStmts.push_back(shr0);
-    newStmts.push_back(cmp);
-    newStmts.push_back(mov0);
-    newStmts.push_back(jmp);
-    newStmts.push_back(label1);
-    newStmts.push_back(mov1);
-    newStmts.push_back(label2);
     isInitialized[m->member.name] = true;
 }
 

@@ -35,9 +35,7 @@ class AddNewMetadataFields : public Transform {
 // This pass adds decl instance of Register extern in dpdk pna program which will
 // be used by dpdk backend for initializing the mask for calculating packet direction
 // and all the use point of istd.direction will follow below calculation and assignment
-// istd.direction =
-// (!(((direction_port_mask.read(0) & (32w0x1 << istd.input_port)) >> istd.input_port))) == 0
-//  ?NET_TO_HOST : HOST_TO_NET
+// istd.direction = direction.read(istd.input_port)
 class DirectionToRegRead : public Transform {
     ordered_map<cstring, cstring> dirToInput;
     ordered_map<cstring, bool> isInitialized;
