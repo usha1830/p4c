@@ -22,16 +22,6 @@ limitations under the License.
 
 namespace DPDK {
 
-// If any pass requires to add metadata field to metadata structure
-// then just have to create and append struct field to static member newMetadataFields
-// In passmanager's passes list AddNewMetadataFields should follow the pass which
-// added fields into newMetadataFields
-class AddNewMetadataFields : public Transform {
- public:
-     static IR::IndexedVector<IR::StructField> newMetadataFields;
-     const IR::Node* preorder(IR::DpdkStructType *st) override;
-};
-
 // This pass adds decl instance of Register extern in dpdk pna program which will
 // be used by dpdk backend for initializing the mask for calculating packet direction
 // and all the use point of istd.direction will follow below calculation and assignment
@@ -40,11 +30,7 @@ class DirectionToRegRead : public Transform {
     ordered_map<cstring, cstring> dirToInput;
     ordered_map<cstring, bool> isInitialized;
     IR::IndexedVector<IR::DpdkAsmStatement> newStmts;
-    IR::IndexedVector<IR::StructField> &newMetadataFields = AddNewMetadataFields::newMetadataFields;
     ordered_set<cstring> usedNames;
-    P4::MinimalNameGenerator mng;
-    cstring reg_read_tmp;
-    cstring left_shift_tmp;
     cstring registerInstanceName;
 
  public:
@@ -61,16 +47,14 @@ class DirectionToRegRead : public Transform {
     isInitialized.insert(std::make_pair(cstring("pna_main_parser_input_metadata_direction"),
                                         false));
     }
-    void uniqueNames(IR::DpdkAsmProgram *p);
-    void collectUsedLables(IR::DpdkListStatement *l);
     const IR::Node* preorder(IR::DpdkAsmProgram *p) override;
+    const IR::Node *postorder(IR::DpdkAction *l) override;
 
+    void uniqueNames(IR::DpdkAsmProgram *p);
     IR::DpdkExternDeclaration*
     addRegDeclInstance(cstring instanceName);
-    void addMetadataField(cstring fieldName, const IR::Type *type);
     bool isDirection(const IR::Member *m);
     IR::DpdkListStatement* replaceDirection(IR::DpdkListStatement *l);
-    const IR::Node *postorder(IR::DpdkAction *l) override;
     void replaceDirection(const IR::Member *m);
     IR::IndexedVector<IR::DpdkAsmStatement>
     replaceDirectionWithRegRead(IR::IndexedVector<IR::DpdkAsmStatement> stmts);
