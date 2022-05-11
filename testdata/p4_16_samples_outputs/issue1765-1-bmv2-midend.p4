@@ -98,15 +98,15 @@ struct headers {
 }
 
 struct metadata {
-    @field_list(0)
+    @field_list(0) 
     port_t  ingress_port;
-    @field_list(0)
+    @field_list(0) 
     task_t  task;
-    @field_list(0)
+    @field_list(0) 
     bit<16> tcp_length;
-    @field_list(0)
+    @field_list(0) 
     bit<32> cast_length;
-    @field_list(0)
+    @field_list(0) 
     bit<1>  do_cksum;
 }
 
@@ -121,7 +121,7 @@ parser MyParser(packet_in packet, out headers hdr, inout metadata meta, inout st
     }
     state ipv4 {
         packet.extract<ipv4_t>(hdr.ipv4);
-        meta.tcp_length = hdr.ipv4.totalLen + 16w65516;
+        meta.tcp_length = hdr.ipv4.totalLen - 16w20;
         transition select(hdr.ipv4.protocol) {
             8w6: tcp;
             8w17: udp;
@@ -304,3 +304,4 @@ control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata
 }
 
 V1Switch<headers, metadata>(MyParser(), MyVerifyChecksum(), MyIngress(), MyEgress(), MyComputeChecksum(), MyDeparser()) main;
+
