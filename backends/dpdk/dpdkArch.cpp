@@ -1167,6 +1167,7 @@ const IR::Node *CollectLocalVariables::preorder(IR::P4Program *p) {
 const IR::Node *CollectLocalVariables::postorder(IR::Type_Struct *s) {
     if (s->name.name == structure->local_metadata_type) {
         for (auto sf : structure->key_fields) {
+		std::cout << "Keyfield " << sf << std::endl;
              s->fields.push_back(sf);
         }
         for (auto kv : localsMap) {
@@ -1215,6 +1216,7 @@ const IR::Node *CollectLocalVariables::postorder(IR::Type_Struct *s) {
 
 const IR::Node *
 CollectLocalVariables::postorder(IR::PathExpression *p) {
+    std::cout << "PathExpression " << p << std::endl;
     if (auto decl = refMap->getDeclaration(p->path)->to<IR::Declaration_Variable>()) {
         if (localsMap.count(decl)) {
             IR::ID name(localsMap.at(decl));
@@ -1396,8 +1398,281 @@ const IR::Node* DismantleMuxExpressions::preorder(IR::Mux* expression) {
     prune();
     return path2;
 }
+const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* statement) {
+    if (statements.empty())
+        return statement;
+    statements.push_back(statement);
+    auto block = new IR::BlockStatement(statements);
+    statements.clear();
+    return block;
+}
 
-cstring DismantleMuxExpressions::createTemporary(const IR::Type* type) {
+//=========================
+
+bool SplitHSIndexExpression::hasHSE(const IR::Expression *hse ) {
+    if (auto mem = hse->to<IR::Member>())
+        if (mem->expr->is<IR::ArrayIndex>()) {
+            return true;
+    }
+    return false;
+}
+
+void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *statement, bool leftHasHSE, bool rightHasHSE) {
+    const IR::Member *mem = nullptr;
+    const IR::ArrayIndex *ai = nullptr; 
+    size_t n_elem = 0;
+    if (leftHasHSE && rightHasHSE) {       
+        mem = statement->left->to<IR::Member>();
+	std::cout << mem->expr->type << std::endl;
+	if (mem->expr->type->is<IR::Type_Stack>())
+	    std::cout << "Type Stack" << mem->expr->type << std::endl;
+
+        ai = mem->expr->to<IR::ArrayIndex>();
+        if (ai->left->is<IR::Member>())
+            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+	std::cout << "n elem " << n_elem << std::endl; 
+        auto right_mem = statement->right->to<IR::Member>();
+        auto ai_right = right_mem->expr->to<IR::ArrayIndex>();      
+        auto index_left = ai->right;
+        auto index_right = ai_right->right;
+        if (equiv(index_left, index_right))
+           replaceSimple(BOTH, index_left, statement, n_elem);
+        else {
+        if (ai->left->is<IR::Member>())
+            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+           replaceSimple(LEFT, index_left, statement, n_elem);
+        if (ai_right->left->is<IR::Member>())
+            n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
+           //TODO some statements to send the correct
+           replaceSimple(RIGHT, index_right, statement, n_elem);
+        }
+    } else if (leftHasHSE) {
+        mem = statement->left->to<IR::Member>();
+        ai = mem->expr->to<IR::ArrayIndex>();
+        if (ai->left->is<IR::Member>())
+            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+	std::cout << "n elem " << n_elem << std::endl; 
+        auto index_left = ai->right;
+        replaceSimple(LEFT, index_left, statement, n_elem);
+    } else if (rightHasHSE) {  
+	std::cout << "Reached rightHasHSE " << std::endl;
+        mem = statement->right->to<IR::Member>();
+        ai = mem->expr->to<IR::ArrayIndex>();
+	std::cout << "ai left" << ai->left << std::endl; 
+        if (ai->left->is<IR::Member>())
+            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+	std::cout << "n elem " << n_elem << std::endl; 
+        auto index_right = ai->right;
+	std::cout << "Reached rightHasHSE 1" << std::endl;
+        replaceSimple(RIGHT, index_right, statement, n_elem);                                   
+    }
+    return;
+}
+
+void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expression *index, const IR::AssignmentStatement *statement, size_t n_elem)
+{
+//    auto index = ai->right;
+    auto type = typeMap->getType(index);
+    if (!isSimpleExpression(index)) {
+        auto tmp = createTemporary(type);
+    //    auto save = statements;
+        statements.clear();
+        auto tmpPath = addAssignment(index->srcInfo, tmp, index);
+        typeMap->setType(tmpPath, type);
+        index = tmpPath;       
+    }
+
+    auto width = type->width_bits();
+    for (auto i = 0; i < n_elem; i++) {
+        IR::AssignmentStatement *newStmt = statement->clone();     
+        if (exp == LEFT || exp == BOTH) {
+            BUG_CHECK(newStmt->left->is<IR::Member>(), "Unexpected LHS, expected a Member");
+            auto mem = newStmt->left->to<IR::Member>();
+            newStmt->left = new IR::Member(mem->srcInfo, new IR::ArrayIndex(
+                                           mem->expr->to<IR::ArrayIndex>()->srcInfo, mem->expr->to<IR::ArrayIndex>()->left,
+                                           new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+        }   
+        if (exp == RIGHT || exp == BOTH) {
+            BUG_CHECK(newStmt->right->is<IR::Member>(), "Unexpected RHS, expected a Member");
+            auto mem = newStmt->right->to<IR::Member>();
+            newStmt->right = new IR::Member(mem->srcInfo, new IR::ArrayIndex(mem->expr->to<IR::ArrayIndex>()->srcInfo,
+                                            mem->expr->to<IR::ArrayIndex>()->left,
+                                            new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+        }
+        std::cout << "New Statement " << newStmt << std::endl;
+        auto ifStatement = new IR::IfStatement(new IR::Equ(index,
+                           new IR::Constant(IR::Type_Bits::get(width),i)), newStmt, nullptr);
+        statements.push_back(ifStatement);
+        std::cout << "New If Statement " << ifStatement << std::endl;                                                                    }
+    std::cout << "New Statements" << std::endl;
+    for (auto s: statements) {
+         std::cout << s << std::endl;
+    }
+}
+
+const IR::Node* SplitHSIndexExpression::postorder(IR::AssignmentStatement* statement) {
+   size_t n_elements = 2;
+   CHECK_NULL(statement);
+   bool leftHasHSE = hasHSE(statement->left);;
+   bool rightHasHSE = hasHSE(statement->right);;
+   replaceVarIndexWithIf(statement, leftHasHSE, rightHasHSE);   
+   if (statements.empty())
+       return statement;
+   auto block = new IR::BlockStatement(statements);
+   statements.clear();
+   return block;
+}
+
+const IR::Node* PrepSplitHSIndexExpression::preorder(IR::Type_Stack *s) {
+    std::cout << "Header stack " << s << std::endl;
+//    n_elements = s->getSize();
+//    hsMap.emplace(s->elementType->toString(), s->getSize());
+    return s;
+}
+
+const IR::Node* PrepSplitHSIndexExpression::preorder(IR::StructField *sf) {
+    std::cout << "Struct field " << sf << std::endl;
+    if (sf->type->is<IR::Type_Stack>()){
+        std::cout << "Struct field 1 " << sf->getName() << std::endl;
+        hsMap.emplace(sf->getName(), sf->type->to<IR::Type_Stack>()->getSize());
+    }
+    return sf;
+}
+
+
+const IR::Node* PrepSplitHSIndexExpression::preorder(IR::Key* keys) {
+    std::cout << "Keys " << keys << std::endl;
+    return keys;
+}
+
+const IR::Node* PrepSplitHSIndexExpression::preorder(IR::KeyElement* element) {
+    std::cout << "Reached Key Element" << element->expression->type << std::endl;
+    if (auto keyField = element->expression->to<IR::Member>()) {
+        if (!keyField->expr->is<IR::ArrayIndex>() || !keyField->expr->type->is<IR::Type_Header>()) {
+            return element;
+	}
+    }
+    LOG3("Extracting key element " << element);
+    auto table = findOrigCtxt<IR::P4Table>();
+    CHECK_NULL(table);
+    P4::TableInsertions* insertions;
+    auto it = toInsert.find(table);
+    if (it == toInsert.end()) {
+        insertions = new P4::TableInsertions();
+        toInsert.emplace(table, insertions);
+    } else {
+        insertions = it->second;
+    }
+
+    auto tmp = refMap->newName("key");
+    auto type = typeMap->getType(element->expression, true);
+    auto decl = new IR::Declaration_Variable(tmp, element->expression->type, nullptr);
+    insertions->declarations.push_back(decl);
+    auto left = new IR::PathExpression(tmp);
+    std::cout << "New Key " << tmp << std::endl;
+    auto right = element->expression;
+    auto assign = new IR::AssignmentStatement(element->expression->srcInfo, left, right);
+    insertions->statements.push_back(assign);
+
+    auto path = new IR::PathExpression(tmp);
+    typeMap->setType(path, element->expression->type);
+    // This preserves annotations on the key
+    element->expression = path;
+    LOG2("Created new key expression " << element);
+    return element;
+
+#if 0    
+    /* We only support array index as part of header stack element */
+//    if ( element->expression->toString().startsWith("h.")) {
+        auto tmp = createTemporary(element->expression->type);
+//	auto save = statements;
+        statements.clear();
+        auto tmpPath = addAssignment(element->srcInfo, tmp, element->expression);
+        typeMap->setType(tmpPath, element->expression->type);
+        element->expression = tmpPath;
+  //  } else {
+//	    BUG("Unsupported key expression using array index %1%", element->expression);
+  //  }
+    return element;
+#endif
+}
+#if 0
+//================
+const IR::ArrayIndex *SplitHSIndexExpression::hasHSE(const IR::Expression *hse ) {
+    if (auto mem = hse->to<IR::Member>())
+        if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
+            return ai;
+        }
+    return nullptr;
+}
+
+void *SplitHSIndexExpression::replaceVarIndexWithIf(const IR::ArrayIndex *ai, IR::AssignmentStatement *statement, bool left) {
+    auto index = ai->right;
+    auto type = typeMap->getType(index);
+    if (!isSimpleExpression(index)) {
+        auto tmp = createTemporary(type);
+        auto save = statements;
+        statements.clear();
+        auto tmpPath = addAssignment(index->srcInfo, tmp, index);
+        typeMap->setType(tmpPath, type);
+        index = tmpPath;
+        //statements = save;
+    }
+
+    auto width = type->width_bits();
+    auto expr = ai->left;
+     for (auto i = 0; i < 2; i++) {
+          IR::AssignmentStatement *newStmt = statement->clone();
+          std::cout << "AI index " << index << " expr " << expr << std::endl;
+          if (left) {
+              BUG_CHECK(newStmt->left->is<IR::Member>(), "Unexpected LHS, expected a Member");
+              auto mem = newStmt->left->to<IR::Member>();
+              newStmt->left = new IR::Member(mem->srcInfo, new IR::ArrayIndex(
+                                    ai->srcInfo, expr, new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+          } else {
+              BUG_CHECK(newStmt->right->is<IR::Member>(), "Unexpected RHS, expected a Member");
+              auto mem = newStmt->right->to<IR::Member>();
+              newStmt->right = new IR::Member(mem->srcInfo, new IR::ArrayIndex(
+                                    ai->srcInfo, expr, new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+          }
+          std::cout << "New Statement " << newStmt << std::endl;
+          auto ifStatement = new IR::IfStatement(
+                             new IR::Equ(index,new IR::Constant(IR::Type_Bits::get(width),i)), newStmt, nullptr);
+          statements.push_back(ifStatement);
+          std::cout << "New If Statement " << ifStatement << std::endl;
+     }
+     std::cout << "New Statements" << std::endl;
+     for (auto s: statements) {
+          std::cout << s << std::endl;
+     }
+}
+
+const IR::Node* SplitHSIndexExpression::postorder(IR::AssignmentStatement* statement) {
+    size_t n_elements = 2;
+    CHECK_NULL(statement);
+    bool leftHasHSE = false;
+    bool rightHasHSE = false;
+    const IR::ArrayIndex *ai_left = hasHSE(statement->left);
+    const IR::ArrayIndex *ai_right = hasHSE(statement->right);
+    if (ai_left && ai_right) {
+        replaceVarIndexWithIf(ai_left, statement, true);
+    } else if (ai_left) {
+        replaceVarIndexWithIf(ai_left, statement, true);
+    } else if (ai_right) {
+        replaceVarIndexWithIf(ai_right, statement, false);
+    } else {
+        return statement;
+    }
+    if (statements.empty())
+        return statement;
+    auto block = new IR::BlockStatement(statements);
+    statements.clear();
+    return block;
+}
+
+//=====================
+#endif
+cstring TransformComplexExpr::createTemporary(const IR::Type* type) {
     type = type->getP4Type();
     auto tmp = refMap->newName("tmp");
     auto decl = new IR::Declaration_Variable(IR::ID(tmp, nullptr), type);
@@ -1405,7 +1680,7 @@ cstring DismantleMuxExpressions::createTemporary(const IR::Type* type) {
     return tmp;
 }
 
-const IR::Expression* DismantleMuxExpressions::addAssignment(
+const IR::Expression* TransformComplexExpr::addAssignment(
     Util::SourceInfo srcInfo,
     cstring varName,
     const IR::Expression* expression) {
@@ -1420,12 +1695,18 @@ const IR::Expression* DismantleMuxExpressions::addAssignment(
     return result;
 }
 
-const IR::Node* DismantleMuxExpressions::postorder(IR::P4Action* action) {
+const IR::Node* TransformComplexExpr::postorder(IR::P4Action* action) {
+	std::cout << "Reached toInsert in action " << std::endl;
     if (toInsert.empty())
         return action;
+	
+    std::cout << "Reached toInsert in action1 " << std::endl;
+
     auto body = new IR::BlockStatement(action->body->srcInfo);
-    for (auto a : toInsert)
+    for (auto a : toInsert) {
+    std::cout << "Reached toInsert in action2 " << a << std::endl;
         body->push_back(a);
+    }
     for (auto s : action->body->components)
         body->push_back(s);
     action->body = body;
@@ -1434,7 +1715,7 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::P4Action* action) {
 }
 
 
-const IR::Node* DismantleMuxExpressions::postorder(IR::Function* function) {
+const IR::Node* TransformComplexExpr::postorder(IR::Function* function) {
     if (toInsert.empty())
         return function;
     auto body = new IR::BlockStatement(function->body->srcInfo);
@@ -1447,7 +1728,7 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::Function* function) {
     return function;
 }
 
-const IR::Node* DismantleMuxExpressions::postorder(IR::P4Parser* parser) {
+const IR::Node* TransformComplexExpr::postorder(IR::P4Parser* parser) {
     if (toInsert.empty())
         return parser;
     parser->parserLocals.append(toInsert);
@@ -1455,7 +1736,7 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::P4Parser* parser) {
     return parser;
 }
 
-const IR::Node* DismantleMuxExpressions::postorder(IR::P4Control* control) {
+const IR::Node* TransformComplexExpr::postorder(IR::P4Control* control) {
     if (toInsert.empty())
         return control;
     control->controlLocals.append(toInsert);
@@ -1463,14 +1744,7 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::P4Control* control) {
     return control;
 }
 
-const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* statement) {
-    if (statements.empty())
-        return statement;
-    statements.push_back(statement);
-    auto block = new IR::BlockStatement(statements);
-    statements.clear();
-    return block;
-}
+
 
 /* This function transforms the table so that all match keys come from the same struct.
    Mirror copies of match fields are created in metadata struct and table is updated to
@@ -1538,6 +1812,11 @@ const IR::Node* CopyMatchKeysToSingleStruct::preorder(IR::Key* keys) {
     for (auto key : keys->keyElements) {
         cstring keyTypeStr = "";
         if (auto keyField = key->expression->to<IR::Member>()) {
+            // If ArrayIndex copyNeeded = true
+                    if (keyField->expr->is<IR::ArrayIndex>()) {
+                    copyNeeded = true;
+                    break;
+                }           
             keyTypeStr =keyField->expr->toString();
         } else if (auto m = key->expression->to<IR::MethodCallExpression>()) {
             /* When isValid is present as table key, it should be moved to metadata */
@@ -1588,6 +1867,8 @@ const IR::Node* CopyMatchKeysToSingleStruct::postorder(IR::KeyElement* element) 
     /* All header fields are prefixed with "h.", prefix the match field with table name */
     if (keyName.startsWith("h.")) {
         keyName = keyName.replace('.','_');
+        keyName = keyName.replace('[','_');
+        keyName = keyName.replace(']','_');
         keyName = keyName.replace("h_",control->name.toString() + "_" + table->name.toString()+"_");
         IR::ID keyNameId(refMap->newName(keyName));
         auto decl = new IR::Declaration_Variable(keyNameId,

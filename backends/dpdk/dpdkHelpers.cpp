@@ -135,6 +135,12 @@ bool ConvertStatementToDpdk::preorder(const IR::AssignmentStatement *a) {
             }
         }
         if (right->is<IR::Add>()) {
+		if (auto cst = src2Op->to<IR::Constant>()){
+		    std::cout << "Reached Add constant " <<  cst << " type " << cst->type << std::endl;
+		    if (cst->type->to<IR::Type_Bits>()->isSigned)
+		        std::cout << "Reached Add signed constant " << cst->value << std::endl;
+		}
+
             i = new IR::DpdkAddStatement(left, src1Op, src2Op);
         } else if (right->is<IR::Sub>()) {
             i = new IR::DpdkSubStatement(left, src1Op, src2Op);
