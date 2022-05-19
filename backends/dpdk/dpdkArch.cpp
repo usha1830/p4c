@@ -1438,14 +1438,33 @@ void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *sta
         if (equiv(index_left, index_right))
            replaceSimple(BOTH, index_left, statement, n_elem);
         else {
-        if (ai->left->is<IR::Member>())
-            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
-           replaceSimple(LEFT, index_left, statement, n_elem);
-        if (ai_right->left->is<IR::Member>())
-            n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
-           //TODO some statements to send the correct
-           replaceSimple(RIGHT, index_right, statement, n_elem);
-        }
+            if (ai->left->is<IR::Member>())
+                n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+               replaceSimple(LEFT, index_left, statement, n_elem);
+            std::cout << "Statements after left replace"<< std::endl;
+            //statements will be modified in replaceSimple so save them
+	    IR::IndexedVector<IR::StatOrDecl> new_stmts;
+	    auto save = statements;
+            for (auto s: save) {
+	        statements.clear();
+                std::cout << s << std::endl;
+                BUG_CHECK(s->is<IR::IfStatement>(), "Expected an IfStatement here, found %1%", s);
+		auto iftrue = s->to<IR::IfStatement>()->ifTrue;
+                BUG_CHECK(iftrue->is<IR::AssignmentStatement>(), "Expected an AssignmentStatement here");
+                auto assign = iftrue->to<IR::AssignmentStatement>();
+                auto right_mem = assign->right->to<IR::Member>();
+                auto ai_right = right_mem->expr->to<IR::ArrayIndex>();      
+                auto index_right = ai_right->right;
+                if (ai_right->left->is<IR::Member>())
+                    n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
+                   //TODO some statements to send the correct
+                replaceSimple(RIGHT, index_right, assign, n_elem);
+                auto block = new IR::BlockStatement(statements);
+		new_stmts.push_back(new IR::IfStatement(s->srcInfo, s->to<IR::IfStatement>()->condition, block, nullptr));
+            }
+	    //Combine statements from save and new statements
+	    statements = new_stmts;
+	}
     } else if (leftHasHSE) {
         mem = statement->left->to<IR::Member>();
         ai = mem->expr->to<IR::ArrayIndex>();
