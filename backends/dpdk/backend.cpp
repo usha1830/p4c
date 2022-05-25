@@ -88,7 +88,7 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         new IfStatementUnroll(refMap, &structure),
         new P4::ClearTypeMap(typeMap),
         new P4::TypeChecking(refMap, typeMap, true),
-	new TransformHSIndex(refMap, typeMap, &invokedInKey),
+        new TransformHSIndex(refMap, typeMap, &invokedInKey),
         new P4::MoveDeclarations(),  // Move all local declarations to the beginning
         new ConvertBinaryOperationTo2Params(refMap),
         new CollectProgramStructure(refMap, typeMap, &structure),

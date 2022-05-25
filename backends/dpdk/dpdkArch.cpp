@@ -1409,6 +1409,7 @@ const IR::Node* DismantleMuxExpressions::preorder(IR::Mux* expression) {
     prune();
     return path2;
 }
+
 const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* statement) {
     if (statements.empty())
         return statement;
@@ -1418,15 +1419,19 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* stat
     return block;
 }
 
-bool SplitHSIndexExpression::hasHSE(const IR::Expression *hse ) {
+bool SplitHSIndexExpression::hasHSE(const IR::Expression *hse) {
     if (auto mem = hse->to<IR::Member>())
-        if (mem->expr->is<IR::ArrayIndex>()) {
-            return true;
+        if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
+            if (!ai->right->is<IR::Constant>())
+                return true;
     }
     return false;
 }
 
-void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *statement, bool leftHasHSE, bool rightHasHSE) {
+// This function drives the replacement of statements with variable array index expressions
+// with a series of if statements based on the number of elements in the header stack.
+void SplitHSIndexExpression::replaceVarIndexWithIf(IR::AssignmentStatement *statement,
+                                                    bool leftHasHSE, bool rightHasHSE) {
     const IR::Member *mem = nullptr;
     const IR::ArrayIndex *ai = nullptr;
     size_t n_elem = 0;
@@ -1447,14 +1452,17 @@ void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *sta
             if (ai->left->is<IR::Member>())
                 n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
                replaceSimple(LEFT, index_left, statement, n_elem);
-            //statements will be modified in replaceSimple so save them
+            // statements will be modified in replaceSimple so save them
             IR::IndexedVector<IR::StatOrDecl> new_stmts;
             auto save = statements;
-            for (auto s: save) {
+            for (auto s : save) {
                 statements.clear();
+                // We assume that the left side variable array index expression
+                // is already converted to if
                 BUG_CHECK(s->is<IR::IfStatement>(), "Expected an IfStatement here, found %1%", s);
                 auto iftrue = s->to<IR::IfStatement>()->ifTrue;
-                BUG_CHECK(iftrue->is<IR::AssignmentStatement>(), "Expected an AssignmentStatement here");
+                BUG_CHECK(iftrue->is<IR::AssignmentStatement>(),
+                          "Expected an AssignmentStatement here");
                 auto assign = iftrue->to<IR::AssignmentStatement>();
                 auto right_mem = assign->right->to<IR::Member>();
                 auto ai_right = right_mem->expr->to<IR::ArrayIndex>();
@@ -1463,7 +1471,8 @@ void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *sta
                     n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
                 replaceSimple(RIGHT, index_right, assign, n_elem);
                 auto block = new IR::BlockStatement(statements);
-                new_stmts.push_back(new IR::IfStatement(s->srcInfo, s->to<IR::IfStatement>()->condition, block, nullptr));
+                new_stmts.push_back(new IR::IfStatement(s->srcInfo,
+                                    s->to<IR::IfStatement>()->condition, block, nullptr));
             }
             statements = new_stmts;
         }
@@ -1485,8 +1494,8 @@ void SplitHSIndexExpression::replaceVarIndexWithIf( IR::AssignmentStatement *sta
     return;
 }
 
-void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expression *index, const IR::AssignmentStatement *statement, size_t n_elem)
-{
+void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expression *index,
+                                const IR::AssignmentStatement *statement, size_t n_elem) {
     auto type = typeMap->getType(index);
     if (!isSimpleExpression(index)) {
         auto tmp = createTemporary(type);
@@ -1497,21 +1506,25 @@ void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expressi
     }
 
     auto width = type->width_bits();
-    for (auto i = 0; i < n_elem; i++) {
+    for (size_t i = 0; i < n_elem; i++) {
         IR::AssignmentStatement *newStmt = statement->clone();
         if (exp == LEFT || exp == BOTH) {
             BUG_CHECK(newStmt->left->is<IR::Member>(), "Unexpected LHS, expected a Member");
             auto mem = newStmt->left->to<IR::Member>();
             newStmt->left = new IR::Member(mem->srcInfo, new IR::ArrayIndex(
-                                           mem->expr->to<IR::ArrayIndex>()->srcInfo, mem->expr->to<IR::ArrayIndex>()->left,
-                                           new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+                                           mem->expr->to<IR::ArrayIndex>()->srcInfo,
+                                           mem->expr->to<IR::ArrayIndex>()->left,
+                                           new IR::Constant(IR::Type_Bits::get(width),i)),
+                                           mem->member);
         }
         if (exp == RIGHT || exp == BOTH) {
             BUG_CHECK(newStmt->right->is<IR::Member>(), "Unexpected RHS, expected a Member");
             auto mem = newStmt->right->to<IR::Member>();
-            newStmt->right = new IR::Member(mem->srcInfo, new IR::ArrayIndex(mem->expr->to<IR::ArrayIndex>()->srcInfo,
+            newStmt->right = new IR::Member(mem->srcInfo, new IR::ArrayIndex(
+                                            mem->expr->to<IR::ArrayIndex>()->srcInfo,
                                             mem->expr->to<IR::ArrayIndex>()->left,
-                                            new IR::Constant(IR::Type_Bits::get(width),i)), mem->member);
+                                            new IR::Constant(IR::Type_Bits::get(width),i)),
+                                             mem->member);
         }
         auto ifStatement = new IR::IfStatement(new IR::Equ(index,
                            new IR::Constant(IR::Type_Bits::get(width),i)), newStmt, nullptr);
@@ -1520,16 +1533,15 @@ void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expressi
 }
 
 const IR::Node* SplitHSIndexExpression::postorder(IR::AssignmentStatement* statement) {
-   size_t n_elements = 2;
-   CHECK_NULL(statement);
-   bool leftHasHSE = hasHSE(statement->left);;
-   bool rightHasHSE = hasHSE(statement->right);;
-   replaceVarIndexWithIf(statement, leftHasHSE, rightHasHSE);
-   if (statements.empty())
-       return statement;
-   auto block = new IR::BlockStatement(statements);
-   statements.clear();
-   return block;
+    CHECK_NULL(statement);
+    bool leftHasHSE = hasHSE(statement->left);;
+    bool rightHasHSE = hasHSE(statement->right);;
+    replaceVarIndexWithIf(statement, leftHasHSE, rightHasHSE);
+    if (statements.empty())
+        return statement;
+    auto block = new IR::BlockStatement(statements);
+    statements.clear();
+    return block;
 }
 
 const IR::Node* PrepSplitHSIndexExpression::preorder(IR::StructField *sf) {
@@ -1545,7 +1557,8 @@ const IR::Node* PrepSplitHSIndexExpression::preorder(IR::Key* keys) {
     bool complex = false;
     for (auto k : keys->keyElements) {
          if (auto keyField = k->expression->to<IR::Member>()) {
-             if (keyField->expr->is<IR::ArrayIndex>() && keyField->expr->type->is<IR::Type_Header>()) {
+             if (keyField->expr->is<IR::ArrayIndex>() &&
+                 keyField->expr->type->is<IR::Type_Header>()) {
                  complex = true;
              }
          }
@@ -1572,7 +1585,6 @@ const IR::Node* PrepSplitHSIndexExpression::preorder(IR::KeyElement* element) {
     }
 
     auto tmp = refMap->newName("key");
-    auto type = typeMap->getType(element->expression, true);
     auto decl = new IR::Declaration_Variable(tmp, element->expression->type, nullptr);
     insertions->declarations.push_back(decl);
     auto left = new IR::PathExpression(tmp);

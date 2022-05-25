@@ -536,11 +536,12 @@ class DefActionValue : public Inspector {
     void postorder(const IR::P4Table* t) override;
 };
 
-// dpdk does not support ternary operator so we need to translate ternary operator
-// to corresponding if else statement
+// dpdk does not support complex expressions like Mux and ArrayIndex
+// This pass breaks the complex expressions into simple expressions by introducing new
+// temporaries and replacing the complex expressions with temporaries.
 // Taken from frontend pass DoSimplifyExpressions in sideEffects.h
 class TransformComplexExpr : public Transform {
- protected:	
+ protected:
     P4::TypeMap* typeMap;
     P4::ReferenceMap *refMap;
     IR::IndexedVector<IR::Declaration> toInsert;  // temporaries
@@ -571,25 +572,63 @@ class DismantleMuxExpressions : public TransformComplexExpr {
     const IR::Node* postorder(IR::AssignmentStatement* statement) override;
 };
 
+// enum specifying which side of assignment has an variable array index expression.
 enum VARINDEX_ENUM {
-    LEFT, 
+    LEFT,
     RIGHT,
     BOTH
-}; 
+};
 
+// This pass transforms the assignment statement having variable array index expression
+// into a set of if statements based on the number of elements in the header stack.
+//
+// meta.left = hdrs.udp[meta.depth - 1].sport;
+//
+// is translated as
+//
+// tmp = meta.depth - 1
+// if (tmp == 0)
+//     meta.left = hdrs.udp[0].sport;
+// if (tmp == 1)
+//     meta.left = hdrs.udp[1].sport;
+
+// A more complex expression is when the variable array index expression is present on both the
+// sides of assignment and both the indices are different variables/expressions.
+// hdrs.udp[meta.depth].sport = hdrs.udp[meta.depth - 1].sport;
+// is translated as
+//
+// tmp = meta.depth - 1
+// tmp1 = meta.depth
+//
+// if (tmp1 == 0)
+//     if (tmp == 0)
+//         hdr.udp[0].sport = hdr.udp[0].sport
+//     if (tmp == 1)
+//         hdr.udp[0].sport = hdr.udp[1].sport
+// if (tmp1 == 1)
+//     if (tmp == 0)
+//         hdr.udp[1].sport = hdr.udp[0].sport
+//     if (tmp == 1)
+//         hdr.udp[1].sport = hdr.udp[1].sport
 class SplitHSIndexExpression : public TransformComplexExpr {
     std::map<cstring, size_t> &hsMap;
  public:
-    SplitHSIndexExpression(P4::TypeMap* typeMap, P4::ReferenceMap* refMap, std::map<cstring, size_t> &hsMap)
-             : TransformComplexExpr(typeMap, refMap), hsMap(hsMap)
+    SplitHSIndexExpression(P4::TypeMap* typeMap, P4::ReferenceMap* refMap,
+                           std::map<cstring, size_t> &hsMap)
+                           : TransformComplexExpr(typeMap, refMap), hsMap(hsMap)
     { setName("SplitHSIndexExpression"); }
 
     bool hasHSE(const IR::Expression *hse);
-    void replaceVarIndexWithIf( IR::AssignmentStatement *statement, bool leftHasHSE, bool rightHasHSE);
-    void replaceSimple(enum VARINDEX_ENUM exp, const IR::Expression *index, const IR::AssignmentStatement *statement, size_t n_elem);
+    void replaceVarIndexWithIf(IR::AssignmentStatement *statement,
+                                bool leftHasHSE, bool rightHasHSE);
+    void replaceSimple(enum VARINDEX_ENUM exp, const IR::Expression *index,
+                       const IR::AssignmentStatement *statement, size_t n_elem);
     const IR::Node* postorder(IR::AssignmentStatement* statement) override;
 };
 
+// This is a preparatory pass for the SplitHSIndexExpression pass.
+// When variable array index expression occurs as a table key, this pass creates a new
+// temporary to hold the array index expression and the new temporary is used as table key
 class PrepSplitHSIndexExpression : public P4::KeySideEffect {
     std::map <cstring, size_t> &hsMap;
  public:
@@ -597,7 +636,7 @@ class PrepSplitHSIndexExpression : public P4::KeySideEffect {
              std::set<const IR::P4Table*>* invokedInKey, std::map<cstring, size_t> &hsMap)
              : P4::KeySideEffect(refMap, typeMap, invokedInKey), hsMap(hsMap)
     { setName("PrepSplitHSIndexExpression"); }
-    
+
     const IR::Node* preorder(IR::Key* key) override;
     const IR::Node* preorder(IR::KeyElement* element) override;
     const IR::Node* preorder(IR::StructField *sf) override;
@@ -608,8 +647,8 @@ class TransformHSIndex : public PassManager {
  public:
     TransformHSIndex(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
              std::set<const IR::P4Table*>* invokedInKey) {
-       	   passes.push_back(new PrepSplitHSIndexExpression(refMap, typeMap, invokedInKey, hsMap));
-           passes.push_back(new SplitHSIndexExpression(typeMap,refMap, hsMap));
+        passes.push_back(new PrepSplitHSIndexExpression(refMap, typeMap, invokedInKey, hsMap));
+        passes.push_back(new SplitHSIndexExpression(typeMap,refMap, hsMap));
     }
 };
 
