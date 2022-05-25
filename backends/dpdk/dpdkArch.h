@@ -539,26 +539,78 @@ class DefActionValue : public Inspector {
 // dpdk does not support ternary operator so we need to translate ternary operator
 // to corresponding if else statement
 // Taken from frontend pass DoSimplifyExpressions in sideEffects.h
-class DismantleMuxExpressions : public Transform {
+class TransformComplexExpr : public Transform {
+ protected:	
     P4::TypeMap* typeMap;
     P4::ReferenceMap *refMap;
     IR::IndexedVector<IR::Declaration> toInsert;  // temporaries
     IR::IndexedVector<IR::StatOrDecl> statements;
-
+ public:
+     TransformComplexExpr(P4::TypeMap* typeMap,
+                            P4::ReferenceMap *refMap)
+        : typeMap(typeMap), refMap(refMap) {}
     cstring createTemporary(const IR::Type* type);
     const IR::Expression* addAssignment(Util::SourceInfo srcInfo, cstring varName,
                                         const IR::Expression* expression);
-
- public:
-    DismantleMuxExpressions(P4::TypeMap* typeMap,
-                            P4::ReferenceMap *refMap)
-        : typeMap(typeMap), refMap(refMap) {}
-    const IR::Node* preorder(IR::Mux* expression) override;
     const IR::Node* postorder(IR::P4Parser* parser) override;
     const IR::Node* postorder(IR::Function* function) override;
     const IR::Node* postorder(IR::P4Control* control) override;
     const IR::Node* postorder(IR::P4Action* action) override;
+};
+
+// dpdk does not support ternary operator so we need to translate ternary operator
+// to corresponding if else statement
+// Taken from frontend pass DoSimplifyExpressions in sideEffects.h
+class DismantleMuxExpressions : public TransformComplexExpr {
+ public:
+    DismantleMuxExpressions(P4::TypeMap* typeMap, P4::ReferenceMap* refMap)
+             : TransformComplexExpr(typeMap, refMap)
+    { setName("DismantleMuxExpressions"); }
+
+    const IR::Node* preorder(IR::Mux* expression) override;
     const IR::Node* postorder(IR::AssignmentStatement* statement) override;
+};
+
+enum VARINDEX_ENUM {
+    LEFT, 
+    RIGHT,
+    BOTH
+}; 
+
+class SplitHSIndexExpression : public TransformComplexExpr {
+    std::map<cstring, size_t> &hsMap;
+ public:
+    SplitHSIndexExpression(P4::TypeMap* typeMap, P4::ReferenceMap* refMap, std::map<cstring, size_t> &hsMap)
+             : TransformComplexExpr(typeMap, refMap), hsMap(hsMap)
+    { setName("SplitHSIndexExpression"); }
+
+    bool hasHSE(const IR::Expression *hse);
+    void replaceVarIndexWithIf( IR::AssignmentStatement *statement, bool leftHasHSE, bool rightHasHSE);
+    void replaceSimple(enum VARINDEX_ENUM exp, const IR::Expression *index, const IR::AssignmentStatement *statement, size_t n_elem);
+    const IR::Node* postorder(IR::AssignmentStatement* statement) override;
+};
+
+class PrepSplitHSIndexExpression : public P4::KeySideEffect {
+    std::map <cstring, size_t> &hsMap;
+ public:
+    PrepSplitHSIndexExpression(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
+             std::set<const IR::P4Table*>* invokedInKey, std::map<cstring, size_t> &hsMap)
+             : P4::KeySideEffect(refMap, typeMap, invokedInKey), hsMap(hsMap)
+    { setName("PrepSplitHSIndexExpression"); }
+    
+    const IR::Node* preorder(IR::Key* key) override;
+    const IR::Node* preorder(IR::KeyElement* element) override;
+    const IR::Node* preorder(IR::StructField *sf) override;
+};
+
+class TransformHSIndex : public PassManager {
+    std::map<cstring, size_t> hsMap;
+ public:
+    TransformHSIndex(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
+             std::set<const IR::P4Table*>* invokedInKey) {
+       	   passes.push_back(new PrepSplitHSIndexExpression(refMap, typeMap, invokedInKey, hsMap));
+           passes.push_back(new SplitHSIndexExpression(typeMap,refMap, hsMap));
+    }
 };
 
 // For dpdk asm, there is not object-oriented. Therefore, we cannot define a
