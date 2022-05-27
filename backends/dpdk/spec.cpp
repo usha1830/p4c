@@ -452,7 +452,7 @@ std::ostream& IR::DpdkLearner::toSpec(std::ostream& out) const {
     }
     out << std::endl;
     if (auto size = properties->getProperty("size")) {
-        out << "\tsize 0x" << std::hex << DPDK::toStr(size->value) << "" << std::endl;
+        out << "\tsize 0x" << DPDK::toStr(size->value) << "" << std::endl;
     } else {
         out << "\tsize 0x" << std::hex << default_learner_table_size << std::endl;
     }
