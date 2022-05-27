@@ -1420,11 +1420,11 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* stat
 }
 
 bool SplitHSIndexExpression::hasHSE(const IR::Expression *hse) {
-    if (auto mem = hse->to<IR::Member>())
-        if (mem->expr->type->is<IR::Type_Stack>())
-            if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
-                if (!ai->right->is<IR::Constant>())
-                    return true;
+    if (auto mem = hse->to<IR::Member>()) {
+        if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
+            if (!ai->right->is<IR::Constant>())
+                return true;
+        }
     }
     return false;
 }
@@ -1560,6 +1560,7 @@ const IR::Node* PrepSplitHSIndexExpression::preorder(IR::Key* keys) {
              if (keyField->expr->is<IR::ArrayIndex>() &&
                  keyField->expr->type->is<IR::Type_Header>()) {
                  complex = true;
+                 break;
              }
          }
     }
@@ -1569,35 +1570,6 @@ const IR::Node* PrepSplitHSIndexExpression::preorder(IR::Key* keys) {
     else
         LOG3("Will pull out " << keys);
     return keys;
-}
-
-const IR::Node* PrepSplitHSIndexExpression::preorder(IR::KeyElement* element) {
-    LOG3("Extracting key element " << element);
-    auto table = findOrigCtxt<IR::P4Table>();
-    CHECK_NULL(table);
-    P4::TableInsertions* insertions;
-    auto it = toInsert.find(table);
-    if (it == toInsert.end()) {
-        insertions = new P4::TableInsertions();
-        toInsert.emplace(table, insertions);
-    } else {
-        insertions = it->second;
-    }
-
-    auto tmp = refMap->newName("key");
-    auto decl = new IR::Declaration_Variable(tmp, element->expression->type, nullptr);
-    insertions->declarations.push_back(decl);
-    auto left = new IR::PathExpression(tmp);
-    auto right = element->expression;
-    auto assign = new IR::AssignmentStatement(element->expression->srcInfo, left, right);
-    insertions->statements.push_back(assign);
-
-    auto path = new IR::PathExpression(tmp);
-    typeMap->setType(path, element->expression->type);
-    // This preserves annotations on the key
-    element->expression = path;
-    LOG2("Created new key expression " << element);
-    return element;
 }
 
 cstring TransformComplexExpr::createTemporary(const IR::Type* type) {

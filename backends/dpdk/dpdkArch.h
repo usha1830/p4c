@@ -637,7 +637,6 @@ class PrepSplitHSIndexExpression : public P4::KeySideEffect {
     { setName("PrepSplitHSIndexExpression"); }
 
     const IR::Node* preorder(IR::Key* key) override;
-    const IR::Node* preorder(IR::KeyElement* element) override;
     const IR::Node* preorder(IR::StructField *sf) override;
 };
 
