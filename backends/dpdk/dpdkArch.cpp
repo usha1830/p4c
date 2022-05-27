@@ -1421,37 +1421,40 @@ const IR::Node* DismantleMuxExpressions::postorder(IR::AssignmentStatement* stat
 
 bool SplitHSIndexExpression::hasHSE(const IR::Expression *hse) {
     if (auto mem = hse->to<IR::Member>())
-        if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
-            if (!ai->right->is<IR::Constant>())
-                return true;
+        if (mem->expr->type->is<IR::Type_Stack>())
+            if (auto ai = mem->expr->to<IR::ArrayIndex>()) {
+                if (!ai->right->is<IR::Constant>())
+                    return true;
     }
     return false;
 }
 
 // This function drives the replacement of statements with variable array index expressions
 // with a series of if statements based on the number of elements in the header stack.
-void SplitHSIndexExpression::replaceVarIndexWithIf(IR::AssignmentStatement *statement,
-                                                    bool leftHasHSE, bool rightHasHSE) {
+void SplitHSIndexExpression::replaceVarIndexWithIf(IR::AssignmentStatement *statement) {
     const IR::Member *mem = nullptr;
     const IR::ArrayIndex *ai = nullptr;
     size_t n_elem = 0;
+    bool leftHasHSE = hasHSE(statement->left);
+    bool rightHasHSE = hasHSE(statement->right);
+
+    if (!leftHasHSE && !rightHasHSE)
+        return;
+
     if (leftHasHSE && rightHasHSE) {
         mem = statement->left->to<IR::Member>();
-        if (mem->expr->type->is<IR::Type_Stack>())
-
         ai = mem->expr->to<IR::ArrayIndex>();
-        if (ai->left->is<IR::Member>())
-            n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
+        BUG_CHECK(ai->left->is<IR::Member>(), "Expected a member expression here");
+        n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
         auto right_mem = statement->right->to<IR::Member>();
         auto ai_right = right_mem->expr->to<IR::ArrayIndex>();
         auto index_left = ai->right;
         auto index_right = ai_right->right;
         if (equiv(index_left, index_right))
-           replaceSimple(BOTH, index_left, statement, n_elem);
+            replaceSimple(BOTH, index_left, statement, n_elem);
         else {
-            if (ai->left->is<IR::Member>())
-                n_elem = ::get(hsMap, ai->left->to<IR::Member>()->member.toString());
-               replaceSimple(LEFT, index_left, statement, n_elem);
+            replaceSimple(LEFT, index_left, statement, n_elem);
+
             // statements will be modified in replaceSimple so save them
             IR::IndexedVector<IR::StatOrDecl> new_stmts;
             auto save = statements;
@@ -1467,8 +1470,8 @@ void SplitHSIndexExpression::replaceVarIndexWithIf(IR::AssignmentStatement *stat
                 auto right_mem = assign->right->to<IR::Member>();
                 auto ai_right = right_mem->expr->to<IR::ArrayIndex>();
                 auto index_right = ai_right->right;
-                if (ai_right->left->is<IR::Member>())
-                    n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
+                BUG_CHECK(ai_right->left->is<IR::Member>(), "Expected a member expression here");
+                n_elem = ::get(hsMap, ai_right->left->to<IR::Member>()->member.toString());
                 replaceSimple(RIGHT, index_right, assign, n_elem);
                 auto block = new IR::BlockStatement(statements);
                 new_stmts.push_back(new IR::IfStatement(s->srcInfo,
@@ -1491,7 +1494,6 @@ void SplitHSIndexExpression::replaceVarIndexWithIf(IR::AssignmentStatement *stat
         auto index_right = ai->right;
         replaceSimple(RIGHT, index_right, statement, n_elem);
     }
-    return;
 }
 
 void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expression *index,
@@ -1534,9 +1536,7 @@ void SplitHSIndexExpression::replaceSimple(VARINDEX_ENUM exp, const IR::Expressi
 
 const IR::Node* SplitHSIndexExpression::postorder(IR::AssignmentStatement* statement) {
     CHECK_NULL(statement);
-    bool leftHasHSE = hasHSE(statement->left);;
-    bool rightHasHSE = hasHSE(statement->right);;
-    replaceVarIndexWithIf(statement, leftHasHSE, rightHasHSE);
+    replaceVarIndexWithIf(statement);
     if (statements.empty())
         return statement;
     auto block = new IR::BlockStatement(statements);

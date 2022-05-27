@@ -619,8 +619,7 @@ class SplitHSIndexExpression : public TransformComplexExpr {
     { setName("SplitHSIndexExpression"); }
 
     bool hasHSE(const IR::Expression *hse);
-    void replaceVarIndexWithIf(IR::AssignmentStatement *statement,
-                                bool leftHasHSE, bool rightHasHSE);
+    void replaceVarIndexWithIf(IR::AssignmentStatement *statement);
     void replaceSimple(enum VARINDEX_ENUM exp, const IR::Expression *index,
                        const IR::AssignmentStatement *statement, size_t n_elem);
     const IR::Node* postorder(IR::AssignmentStatement* statement) override;
