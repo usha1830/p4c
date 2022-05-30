@@ -1545,7 +1545,7 @@ const IR::Node* SplitHSIndexExpression::postorder(IR::AssignmentStatement* state
 }
 
 const IR::Node* PrepSplitHSIndexExpression::preorder(IR::StructField *sf) {
-    if (sf->type->is<IR::Type_Stack>()){
+    if (sf->type->is<IR::Type_Stack>()) {
         hsMap.emplace(sf->getName(), sf->type->to<IR::Type_Stack>()->getSize());
     }
     return sf;
