@@ -491,9 +491,27 @@ void DpdkContextGenerator::addMatchTables(Util::JsonArray* tablesJson) {
     }
 }
 
+// Add extern information to the context json
+void DpdkContextGenerator::addExternInfo(Util::JsonArray* externsJson) {
+    for (auto t : externs) {
+        auto externAttr = ::get(externAttrMap, t->name.name);
+        auto* externJson = new Util::JsonObject();
+        externJson->emplace("name", externAttr.externalName);
+        externJson->emplace("target_name", t->name.name);
+        externJson->emplace("type", externAttr.externType);
+        auto* attrJson = new Util::JsonObject();
+        if (externAttr.externType == "Counter") {
+            attrJson->emplace("type", externAttr.counterType);
+        }
+        externJson->emplace("attributes", attrJson);
+        externsJson->append(externJson);
+    }
+}
+
 const Util::JsonObject* DpdkContextGenerator::genContextJsonObject() {
     auto* json = new Util::JsonObject();
     auto* tablesJson = new Util::JsonArray();
+    auto* externsJson = new Util::JsonArray();
     struct TopLevelCtxt tlinfo;
     tlinfo.initTopLevelCtxt(options);
     json->emplace("program_name", tlinfo.progName);
@@ -504,6 +522,8 @@ const Util::JsonObject* DpdkContextGenerator::genContextJsonObject() {
     json->emplace("target", cstring("DPDK"));
     json->emplace("tables", tablesJson);
     addMatchTables(tablesJson);
+    json->emplace("externs", externsJson);
+    addExternInfo(externsJson);
     return json;
 }
 
