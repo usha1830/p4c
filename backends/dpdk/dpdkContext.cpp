@@ -125,7 +125,8 @@ void DpdkContextGenerator::CollectTablesAndSetAttributes() {
                 externTypeName == "Register" ||
                 externTypeName == "Meter" ||
                 externTypeName == "Hash" ||
-                externTypeName == "InternetCheckSum") {
+                externTypeName == "InternetCheckSum" ||
+                externTypeName == "MatchValueLookupTable") {
                 struct externAttributes externAttr;
                 externAttr.externalName = ed->controlPlaneName();
                 externAttr.externType = externTypeName;
@@ -715,8 +716,6 @@ void DpdkContextGenerator::addMatchValueLookupTables(Util::JsonArray* tablesJson
     outputLutTable(tablesJson);
 }
 
-
->>>>>>> Emit context json for MatchValueLookupTable externs (#19)
 const Util::JsonObject* DpdkContextGenerator::genContextJsonObject() {
     auto* json = new Util::JsonObject();
     auto* tablesJson = new Util::JsonArray();
