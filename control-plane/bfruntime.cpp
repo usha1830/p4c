@@ -610,9 +610,6 @@ BFRuntimeGenerator::makeActionSpecs(const p4configv1::Table& table,
                     dataJson, param.id(), param.name(), true /* mandatory */,
                     false /* read_only */, makeTypeBytes(param.bitwidth()), annotations);
             }
-            addActionDataField(
-                dataJson, param.id(), param.name(), true /* mandatory */,
-                false /* read_only */, makeTypeBytes(param.bitwidth()), annotations);
             if (param.id() > maxId) maxId = param.id();
         }
         spec->emplace("data", dataJson);
@@ -882,7 +879,7 @@ BFRuntimeGenerator::addMatchValueLookupTables(Util::JsonArray* tables_json_array
          auto* annotations = transformAnnotations(pre.annotations().begin(),
                                                   pre.annotations().end());
          cstring table_name = IR::P4Program::main + "." + pre.name();
-         cstring table_type = "MatchValueLookupTable";
+         cstring table_type = "match_value_lookup_table";
          auto table_json = this->initTableJson((std::string)table_name, pre.id(), table_type,
                                             emvlt.size(), annotations);
          table_json->emplace("has_const_default_action", false);
