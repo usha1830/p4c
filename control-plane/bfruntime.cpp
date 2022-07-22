@@ -46,14 +46,14 @@ TypeSpecParser TypeSpecParser::make(const p4configv1::P4Info& p4info,
                         e, instanceType, instanceName);
                 return;
             }
-            type = makeTypeBits(typeEnum->second.underlying_type().bitwidth());
+            type = makeTypeBytes(typeEnum->second.underlying_type().bitwidth());
         } else if (fSpec.has_bitstring()) {
             if (fSpec.bitstring().has_bit())
-                type = makeTypeBits(fSpec.bitstring().bit().bitwidth());
+                type = makeTypeBytes(fSpec.bitstring().bit().bitwidth());
             else if (fSpec.bitstring().has_int_())
-                type = makeTypeBits(fSpec.bitstring().int_().bitwidth());
+                type = makeTypeBytes(fSpec.bitstring().int_().bitwidth());
             else if (fSpec.bitstring().has_varbit())
-                type = makeTypeBits(fSpec.bitstring().varbit().max_bitwidth());
+                type = makeTypeBytes(fSpec.bitstring().varbit().max_bitwidth());
         } else if (fSpec.has_bool_()) {
             type = makeTypeBool(1);
         } else if (fSpec.has_new_type()) {
@@ -66,7 +66,7 @@ TypeSpecParser TypeSpecParser::make(const p4configv1::P4Info& p4info,
                         typeName, instanceType, instanceName);
                 return;
             }
-            type = makeTypeBits(newType->second.translated_type().sdn_bitwidth());
+            type = makeTypeBytes(newType->second.translated_type().sdn_bitwidth());
         }
 
         if (!type) {
@@ -123,7 +123,7 @@ TypeSpecParser TypeSpecParser::make(const p4configv1::P4Info& p4info,
                   "Header name '%1%' not found in P4Info map", headerName);
         P4Id id = idOffset;
         for (const auto& member : p_it->second.members()) {
-            auto* type = makeTypeBits(member.type_spec().bit().bitwidth());
+            auto* type = makeTypeBytes(member.type_spec().bit().bitwidth());
             fields.push_back({prefix + member.name() + suffix, id++, type});
         }
     } else if (typeSpec.has_serializable_enum()) {
@@ -133,7 +133,7 @@ TypeSpecParser TypeSpecParser::make(const p4configv1::P4Info& p4info,
                   "Serializable name '%1%' not found in P4Info map", enumName);
         P4Id id = idOffset;
         for (const auto& member : p_it->second.members()) {
-            auto* type = makeTypeBits(p_it->second.underlying_type().bitwidth());
+            auto* type = makeTypeBytes(p_it->second.underlying_type().bitwidth());
             fields.push_back({prefix + member.name() + suffix, id++, type});
         }
     } else {
@@ -608,11 +608,11 @@ BFRuntimeGenerator::makeActionSpecs(const p4configv1::Table& table,
             } else {
                 addActionDataField(
                     dataJson, param.id(), param.name(), true /* mandatory */,
-                    false /* read_only */, makeTypeBits(param.bitwidth()), annotations);
+                    false /* read_only */, makeTypeBytes(param.bitwidth()), annotations);
             }
             addActionDataField(
                 dataJson, param.id(), param.name(), true /* mandatory */,
-                false /* read_only */, makeTypeBits(param.bitwidth()), annotations);
+                false /* read_only */, makeTypeBytes(param.bitwidth()), annotations);
             if (param.id() > maxId) maxId = param.id();
         }
         spec->emplace("data", dataJson);
@@ -760,7 +760,7 @@ BFRuntimeGenerator::addMatchTables(Util::JsonArray* tablesJson) const {
             // driver initialized default value (0).
             addKeyField(keyJson, mf.id(), keyName,
                         false /* mandatory */, *matchType,
-                        makeTypeBits(mf.bitwidth(), boost::none),
+                        makeTypeBytes(mf.bitwidth(), boost::none),
                         annotations);
         }
         if (needsPriority) {
@@ -903,13 +903,13 @@ BFRuntimeGenerator::addMatchValueLookupTables(Util::JsonArray* tables_json_array
                       break;
               }
               addKeyField(keys_json, mf.id(), mf.name(), false /* mandatory */,
-                     *match_type, makeTypeBits(mf.bitwidth(), boost::none));
+                     *match_type, makeTypeBytes(mf.bitwidth(), boost::none));
          }
          table_json->emplace("key", keys_json);
          auto* data_json = new Util::JsonArray();
          for (const auto& p : emvlt.params()) {
               auto data_obj = makeCommonDataField(p.id(), p.name(),
-                                                  makeTypeBits(p.bitwidth()),
+                                                  makeTypeBytes(p.bitwidth()),
                                                     false /* repeated */);
               data_obj->emplace("mandatory", false);
               data_obj->emplace("read_only", false);
