@@ -282,7 +282,8 @@ class DpdkContextGenerator : public Inspector {
     void addExternInfo(Util::JsonArray* externsJson);
     void addMatchValueLookupTables(Util::JsonArray* tablesJson);
     void UpdateImmediateFields(P4MatchLookupTableInfo* emvlut, const IR::Type* type);
-    void UpdateMatchKeys(P4MatchLookupTableInfo* emvlut, const IR::Type* type);
+    void UpdateMatchKeys(P4MatchLookupTableInfo* emvlut, const IR::Type* type,
+                         cstring instanceName);
     void ProcessMatchValueLookupTable(const IR::Declaration_Instance* d);
     void outputLutTable(Util::JsonArray* tablesJson);
     void outputLutMatchAttributes(Util::JsonObject* matchJson,
