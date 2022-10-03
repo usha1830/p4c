@@ -139,7 +139,9 @@ void DpdkBackend::convert(const IR::ToplevelBlock *tlb) {
         new CopyPropagationAndElimination(typeMap),
         new CollectUsedMetadataField(used_fields),
         new RemoveUnusedMetadataFields(used_fields),
-        new ShortenTokenLength(),
+        new ValidateTableKeys(),
+        new ShortenTokenLength(refMap, typeMap),
+        new EmitDpdkTableConfig(refMap, typeMap),
     };
 
     dpdk_program = dpdk_program->apply(post_code_gen)->to<IR::DpdkAsmProgram>();
