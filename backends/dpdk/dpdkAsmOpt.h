@@ -17,6 +17,7 @@ limitations under the License.
 #ifndef BACKENDS_DPDK_DPDKASMOPT_H_
 #define BACKENDS_DPDK_DPDKASMOPT_H_
 
+#include <fstream>
 #include "frontends/common/constantFolding.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/coreLibrary.h"
@@ -175,6 +176,8 @@ class ValidateTableKeys : public Inspector {
 
 // This pass shorten the Identifier length
 class ShortenTokenLength : public Transform {
+    P4::ReferenceMap* refMap;
+    P4::TypeMap* typeMap;
     ordered_map<cstring, cstring> newNameMap;
     static size_t count;
     // Currently Dpdk allows Identifier of 63 char long or less
@@ -198,6 +201,9 @@ class ShortenTokenLength : public Transform {
     }
 
  public:
+    ShortenTokenLength(P4::ReferenceMap* refMap, P4::TypeMap* typeMap,
+        ordered_map<cstring, cstring>& newNameMap) :
+        refMap(refMap), typeMap(typeMap) , newNameMap(newNameMap){}
     static ordered_map<cstring, cstring> origNameMap;
 
     const IR::Node* preorder(IR::Member *m) override {
@@ -255,18 +261,65 @@ class ShortenTokenLength : public Transform {
         return g;
     }
 
-    const IR::Node* preorder(IR::Path *p) override {
-        p->name = shortenString(p->name);
-        return p;
+    void shortenParamTypeName(IR::ParameterList& pl) {
+        IR::IndexedVector<IR::Parameter> new_pl;
+        for (auto p : pl.parameters) {
+            auto newType0 = p->type->to<IR::Type_Name>();
+            auto path0 = newType0->path->clone();
+            path0->name = shortenString(path0->name);
+            new_pl.push_back(new IR::Parameter(p->srcInfo, p->name,
+                            p->annotations, p->direction,
+                            new IR::Type_Name(newType0->srcInfo, path0),
+                            p->defaultValue));
+        }
+        pl = IR::ParameterList {new_pl};
     }
 
+    /// action name and args type name can be long, param name is always t
     const IR::Node* preorder(IR::DpdkAction *a) override {
         a->name = shortenString(a->name);
+        shortenParamTypeName(a->para);
         return a;
+    }
+
+    const IR::Node* preorder(IR::ActionList* al) override{
+        IR::IndexedVector<IR::ActionListElement> new_al;
+        for (auto ale : al->actionList) {
+            auto methodCallExpr = ale->expression->to<IR::MethodCallExpression>();
+            auto pathExpr = methodCallExpr->method->to<IR::PathExpression>();
+            auto path0 = pathExpr->path->clone();
+            // this for getting rid of NoAction_0 or NoAction_1
+            if (path0->name.name.find("NoAction"))
+                path0 = new IR::Path("NoAction");
+            path0->name = shortenString(path0->name);
+            new_al.push_back(new IR::ActionListElement(ale->srcInfo,
+                        ale->annotations,
+                        new IR::MethodCallExpression(methodCallExpr->srcInfo,
+                            methodCallExpr->type,
+                            new IR::PathExpression(pathExpr->srcInfo,
+                                                   pathExpr->type, path0),
+                            methodCallExpr->typeArguments,
+                            methodCallExpr->arguments)));
+        }
+        return new IR::ActionList(al->srcInfo, new_al);
     }
 
     const IR::Node* preorder(IR::DpdkTable *t) override {
         t->name = shortenString(t->name);
+        auto methodCallExpr = t->default_action->to<IR::MethodCallExpression>();
+        auto pathExpr = methodCallExpr->method->to<IR::PathExpression>();
+        auto path0 = pathExpr->path->clone();
+        // this for getting rid of NoAction_0 or NoAction_1
+        if (path0->name.name.find("NoAction"))
+            path0 = new IR::Path("NoAction");
+        path0->name = shortenString(path0->name);
+        t->default_action = new IR::MethodCallExpression(methodCallExpr->srcInfo,
+                                                         methodCallExpr->type,
+                                                         new IR::PathExpression(pathExpr->srcInfo,
+                                                                                pathExpr->type,
+                                                                                path0),
+                                                        methodCallExpr->typeArguments,
+                                                        methodCallExpr->arguments);
         return t;
     }
 
@@ -567,6 +620,49 @@ class CopyPropagationAndElimination : public Transform {
     }
 };
 
+// This Pass emits Table config consumed by dpdk target in a text file if
+// const entries are present in p4 program.
+// Most of the code taken from control-plane/p4RuntimeSerializer.h/.cpp
+class EmitDpdkTableConfig : public Inspector {
+    P4::ReferenceMap* refMap;
+    P4::TypeMap* typeMap;
+    ordered_map<cstring, cstring> newNameMap;
+    std::ofstream dpdkTableConfigFile;
+
+    void addExact(const IR::Expression* k,
+                int keyWidth, P4::TypeMap* typeMap);
+    void addLpm(const IR::Expression* k,
+                int keyWidth, P4::TypeMap* typeMap);
+    void addTernary(const IR::Expression* k,
+                int keyWidth, P4::TypeMap* typeMap);
+    void addRange(const IR::Expression* k,
+                int keyWidth, P4::TypeMap* typeMap);
+    void addOptional(const IR::Expression* k,
+                int keyWidth, P4::TypeMap* typeMap);
+    void addMatchKey(const IR::DpdkTable* table,
+                     const IR::ListExpression* keyset,
+                     P4::TypeMap* typeMap);
+    void addAction(const IR::Expression* actionRef,
+                   P4::ReferenceMap* refMap,
+                   P4::TypeMap* typeMap);
+    int getTypeWidth(const IR::Type* type, P4::TypeMap* typeMap);
+    cstring getKeyMatchType(const IR::KeyElement* ke, P4::ReferenceMap* refMap);
+    const IR::EntriesList* getEntries(const IR::DpdkTable* dt);
+    const IR::Key *getKey(const IR::DpdkTable* dt);
+    big_int convertSimpleKeyExpressionToBigInt(
+        const IR::Expression* k, int keyWidth, P4::TypeMap* typeMap);
+    bool tableNeedsPriority(const IR::DpdkTable* table, P4::ReferenceMap* refMap);
+    bool isAllKeysDefaultExpression(const IR::ListExpression* keyset);
+    void print(cstring str, cstring sep="");
+    void print(big_int, cstring sep="");
+
+ public:
+    EmitDpdkTableConfig(P4::ReferenceMap* refMap,
+                        P4::TypeMap *typeMap,
+                        ordered_map<cstring, cstring>& newNameMap) : refMap(refMap),
+                        typeMap(typeMap), newNameMap(newNameMap) {}
+    void postorder(const IR::DpdkTable* table) override;
+};
 
 // Instructions can only appear in actions and apply block of .spec file.
 // All these individual passes work on the actions and apply block of .spec file.
