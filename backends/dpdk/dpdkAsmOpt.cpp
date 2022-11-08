@@ -480,8 +480,8 @@ void EmitDpdkTableConfig::addAction(const IR::Expression* actionRef,
     auto actionCall = actionRef->to<IR::MethodCallExpression>();
     auto method = actionCall->method->to<IR::PathExpression>()->path;
     const IR::Path* origMethod = nullptr;
-    if (ShortenTokenLength::origNameMap.count(method->name) > 0) {
-        origMethod = new IR::Path(ShortenTokenLength::origNameMap[method->name]);
+    if (ShortenTokenLength::origNameMap.count(method->name.name) > 0) {
+        origMethod = new IR::Path(ShortenTokenLength::origNameMap[method->name.name]);
     } else {
         origMethod = method;
     }

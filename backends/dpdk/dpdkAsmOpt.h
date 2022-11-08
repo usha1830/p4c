@@ -169,7 +169,7 @@ class RemoveUnusedMetadataFields : public Transform {
 class ShortenTokenLength : public Transform {
     P4::ReferenceMap* refMap;
     P4::TypeMap* typeMap;
-    ordered_map<cstring, cstring> newNameMap;
+    ordered_map<cstring, cstring>& newNameMap;
     static size_t count;
     // Currently Dpdk allows Identifier of 63 char long or less
     // including dots(.) for member exp.
@@ -616,7 +616,7 @@ class CopyPropagationAndElimination : public Transform {
 class EmitDpdkTableConfig : public Inspector {
     P4::ReferenceMap* refMap;
     P4::TypeMap* typeMap;
-    ordered_map<cstring, cstring> newNameMap;
+    ordered_map<cstring, cstring>& newNameMap;
     std::ofstream dpdkTableConfigFile;
 
     void addExact(const IR::Expression* k,
