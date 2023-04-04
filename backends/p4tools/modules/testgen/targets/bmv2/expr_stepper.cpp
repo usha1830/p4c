@@ -2,15 +2,12 @@
 
 #include <cstddef>
 #include <functional>
-#include <list>
 #include <optional>
 #include <ostream>
 #include <vector>
 
-#include <boost/cstdint.hpp>
-#include <boost/format.hpp>
+#include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/number.hpp>
-#include <boost/variant/get.hpp>
 
 #include "backends/p4tools/common/core/solver.h"
 #include "backends/p4tools/common/lib/formulae.h"
@@ -19,16 +16,13 @@
 #include "backends/p4tools/common/lib/util.h"
 #include "ir/declaration.h"
 #include "ir/indexed_vector.h"
-#include "ir/ir-inline.h"
 #include "ir/irutils.h"
 #include "ir/node.h"
-#include "lib/big_int_util.h"
 #include "lib/cstring.h"
 #include "lib/error.h"
 #include "lib/exceptions.h"
 #include "lib/log.h"
 #include "lib/ordered_map.h"
-#include "lib/safe_vector.h"
 
 #include "backends/p4tools/modules/testgen/core/arch_spec.h"
 #include "backends/p4tools/modules/testgen/core/externs.h"
@@ -46,11 +40,7 @@
 #include "backends/p4tools/modules/testgen/targets/bmv2/target.h"
 #include "backends/p4tools/modules/testgen/targets/bmv2/test_spec.h"
 
-namespace P4Tools {
-
-namespace P4Testgen {
-
-namespace Bmv2 {
+namespace P4Tools::P4Testgen::Bmv2 {
 
 std::string BMv2_V1ModelExprStepper::getClassName() { return "BMv2_V1ModelExprStepper"; }
 
@@ -1313,11 +1303,11 @@ void BMv2_V1ModelExprStepper::evalExternMethodCall(const IR::MethodCallExpressio
                  size_t egressDelim = 0;
                  for (; egressDelim < topLevelBlocks->size(); ++egressDelim) {
                      auto block = topLevelBlocks->at(egressDelim);
-                     const auto *p4Node = boost::get<const IR::Node *>(&block);
-                     if (p4Node == nullptr) {
+                     if (!std::holds_alternative<const IR::Node *>(block)) {
                          continue;
                      }
-                     if (const auto *ctrl = (*p4Node)->to<IR::P4Control>()) {
+                     const auto *p4Node = std::get<const IR::Node *>(block);
+                     if (const auto *ctrl = p4Node->to<IR::P4Control>()) {
                          if (progInfo->getGress(ctrl) == BMV2_EGRESS) {
                              break;
                          }
@@ -1764,8 +1754,4 @@ bool BMv2_V1ModelExprStepper::preorder(const IR::P4Table *table) {
     return tableStepper.eval();
 }
 
-}  // namespace Bmv2
-
-}  // namespace P4Testgen
-
-}  // namespace P4Tools
+}  // namespace P4Tools::P4Testgen::Bmv2

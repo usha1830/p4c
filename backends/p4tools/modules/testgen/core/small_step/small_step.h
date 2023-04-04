@@ -9,6 +9,7 @@
 #include "backends/p4tools/common/core/solver.h"
 #include "backends/p4tools/common/lib/formulae.h"
 #include "gsl/gsl-lite.hpp"
+#include "midend/coverage.h"
 
 #include "backends/p4tools/modules/testgen/core/program_info.h"
 #include "backends/p4tools/modules/testgen/lib/execution_state.h"
@@ -18,6 +19,8 @@ namespace P4Tools::P4Testgen {
 /// The main class that implements small-step operational semantics. Delegates to implementations
 /// of AbstractStepper.
 class SmallStepEvaluator {
+    friend class CommandVisitor;
+
  public:
     /// A branch is an execution state paired with an optional path constraint representing the
     /// choice made to take the branch.
@@ -61,6 +64,14 @@ class SmallStepEvaluator {
 
     /// Reachability engine.
     ReachabilityEngine *reachabilityEngine = nullptr;
+
+    using REngineType = std::pair<ReachabilityResult, std::vector<SmallStepEvaluator::Branch> *>;
+
+    static void renginePostprocessing(ReachabilityResult &result,
+                                      std::vector<SmallStepEvaluator::Branch> *branches);
+
+    REngineType renginePreprocessing(SmallStepEvaluator &stepper, const ExecutionState &nextState,
+                                     const IR::Node *node);
 
  public:
     Result step(ExecutionState &state);

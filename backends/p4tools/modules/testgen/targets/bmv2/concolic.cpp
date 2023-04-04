@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <iterator>
+#include <list>
 #include <map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <boost/multiprecision/cpp_int.hpp>
@@ -20,6 +22,7 @@
 #include "ir/vector.h"
 #include "lib/cstring.h"
 #include "lib/exceptions.h"
+#include "lib/log.h"
 
 #include "backends/p4tools/modules/testgen/lib/concolic.h"
 #include "backends/p4tools/modules/testgen/lib/exceptions.h"
